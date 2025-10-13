@@ -34,8 +34,10 @@ const CourseCatalog = () => {
       try {
         setLoading(true);
         const response = await courseAPI.getCourses();
-        setCourses(response.data);
-        setFilteredCourses(response.data);
+        // Handle new API response format { courses: [...], total: ... }
+        const coursesData = response.data.courses || response.data;
+        setCourses(coursesData);
+        setFilteredCourses(coursesData);
       } catch (err) {
         setError('Failed to load courses. Please try again.');
         console.error('Course catalog error:', err);
@@ -67,6 +69,7 @@ const CourseCatalog = () => {
   }, [courses, searchTerm, departmentFilter]);
 
   const getDepartments = () => {
+    if (!Array.isArray(courses) || courses.length === 0) return [];
     const departments = [...new Set(courses.map(course => course.department))];
     return departments.sort();
   };
