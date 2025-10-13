@@ -25,9 +25,11 @@ import {
   Edit as EditIcon,
 } from '@mui/icons-material';
 import { userAPI } from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
 
 const UserProfile = () => {
-  const userId = 1; // Default user ID
+  const { user: authUser, updateUser: updateAuthUser } = useAuth();
+  const userId = authUser?.id; // Use authenticated user's ID
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -40,13 +42,19 @@ const UserProfile = () => {
   useEffect(() => {
     console.log('UserProfile: Component mounted');
     
+    // Don't load if we don't have a user ID yet
+    if (!userId) {
+      setLoadingData(false);
+      return;
+    }
+    
     // Create default user data immediately
     const defaultUser = {
       id: userId,
-      username: 'Student',
-      email: 'student@university.edu',
-      major: 'Computer Science',
-      graduation_year: 2026,
+      username: authUser?.username || 'Student',
+      email: authUser?.email || 'student@university.edu',
+      major: authUser?.major || 'Computer Science',
+      graduation_year: authUser?.graduation_year || 2026,
       preferences: {
         preferred_times: ['Morning', 'Afternoon'],
         preferred_departments: ['Computer Science', 'Mathematics'],
@@ -62,6 +70,7 @@ const UserProfile = () => {
       email: defaultUser.email,
       major: defaultUser.major,
       graduation_year: defaultUser.graduation_year,
+      current_year: defaultUser.current_year || 'Freshman',
       preferred_times: defaultUser.preferences.preferred_times,
       preferred_departments: defaultUser.preferences.preferred_departments,
       max_credits_per_semester: defaultUser.preferences.max_credits_per_semester,
@@ -91,11 +100,20 @@ const UserProfile = () => {
           };
           
           setUser(combinedUser);
+          // Sync with AuthContext to keep Navbar updated
+          updateAuthUser({
+            username: backendUser.username,
+            email: backendUser.email,
+            major: backendUser.major,
+            graduation_year: backendUser.graduation_year,
+            current_year: backendUser.current_year,
+          });
           setFormData({
             username: backendUser.username || 'Student',
             email: backendUser.email || 'student@university.edu',
             major: backendUser.major || 'Computer Science',
             graduation_year: backendUser.graduation_year || 2026,
+            current_year: backendUser.current_year || 'Freshman',
             preferred_times: backendPrefs.preferred_times || ['Morning', 'Afternoon'],
             preferred_departments: backendPrefs.preferred_departments || ['Computer Science', 'Mathematics'],
             max_credits_per_semester: backendPrefs.max_credits_per_semester || 18,
@@ -113,7 +131,7 @@ const UserProfile = () => {
     };
     
     loadFromBackend();
-  }, [userId]);
+  }, [userId, authUser]);
 
   const handleInputChange = (field, value) => {
     setFormData(prev => ({
@@ -135,6 +153,7 @@ const UserProfile = () => {
         email: formData.email,
         major: formData.major,
         graduation_year: formData.graduation_year,
+        current_year: formData.current_year,
         preferences: {
           preferred_times: formData.preferred_times,
           preferred_departments: formData.preferred_departments,
@@ -150,11 +169,12 @@ const UserProfile = () => {
         email: formData.email,
         major: formData.major,
         graduation_year: formData.graduation_year,
+        current_year: formData.current_year,
       }));
       
-      // Save preferences in the format expected by ScheduleGenerator
+      // Save preferences for schedule building
       const scheduleGeneratorPrefs = {
-        completed_courses: [], // Will be populated by ScheduleGenerator
+        completed_courses: [], // Will be populated by schedule builder
         preferred_departments: formData.preferred_departments,
         preferred_times: formData.preferred_times,
         max_credits_per_semester: formData.max_credits_per_semester,
@@ -171,11 +191,27 @@ const UserProfile = () => {
         await userAPI.updateUser(userId, updatedUser);
         await userAPI.updateUserPreferences(userId, updatedUser.preferences);
         setUser(updatedUser);
+        // Update AuthContext so Navbar and other components see the change
+        updateAuthUser({
+          username: formData.username,
+          email: formData.email,
+          major: formData.major,
+          graduation_year: formData.graduation_year,
+          current_year: formData.current_year,
+        });
         setIsEditing(false);
         setSuccess('Profile updated successfully!');
       } catch (apiErr) {
         // If backend fails, still update local state
         setUser(updatedUser);
+        // Update AuthContext even if backend fails
+        updateAuthUser({
+          username: formData.username,
+          email: formData.email,
+          major: formData.major,
+          graduation_year: formData.graduation_year,
+          current_year: formData.current_year,
+        });
         setIsEditing(false);
         setSuccess('Profile updated locally! (Backend sync failed)');
         console.error('Backend update failed:', apiErr);
@@ -194,6 +230,7 @@ const UserProfile = () => {
       email: user.email,
       major: user.major,
       graduation_year: user.graduation_year,
+      current_year: user.current_year || 'Freshman',
       preferred_times: user.preferences.preferred_times,
       preferred_departments: user.preferences.preferred_departments,
       max_credits_per_semester: user.preferences.max_credits_per_semester,
@@ -312,12 +349,21 @@ const UserProfile = () => {
               <Typography variant="body2" color="text.secondary" gutterBottom>
                 {user.email}
               </Typography>
-              <Chip
-                label={user.major}
-                color="primary"
-                variant="outlined"
-                sx={{ mt: 1 }}
-              />
+              <Box sx={{ mt: 1 }}>
+                <Chip
+                  label={user.major}
+                  color="primary"
+                  variant="outlined"
+                />
+                {user.current_year && (
+                  <Chip
+                    label={user.current_year}
+                    color="secondary"
+                    variant="outlined"
+                    sx={{ ml: 1 }}
+                  />
+                )}
+              </Box>
               <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
                 Expected Graduation: {user.graduation_year}
               </Typography>
@@ -391,6 +437,23 @@ const UserProfile = () => {
                     disabled={!isEditing}
                     inputProps={{ min: 2024, max: 2030 }}
                   />
+                </Grid>
+                <Grid xs={12} sm={6}>
+                  <FormControl fullWidth>
+                    <InputLabel>Current Year (Classification)</InputLabel>
+                    <Select
+                      value={formData.current_year || ''}
+                      label="Current Year (Classification)"
+                      onChange={(e) => handleInputChange('current_year', e.target.value)}
+                      disabled={!isEditing}
+                    >
+                      <MenuItem value="Freshman">Freshman (1st Year)</MenuItem>
+                      <MenuItem value="Sophomore">Sophomore (2nd Year)</MenuItem>
+                      <MenuItem value="Junior">Junior (3rd Year)</MenuItem>
+                      <MenuItem value="Senior">Senior (4th Year)</MenuItem>
+                      <MenuItem value="Graduate">Graduate Student</MenuItem>
+                    </Select>
+                  </FormControl>
                 </Grid>
               </Grid>
 

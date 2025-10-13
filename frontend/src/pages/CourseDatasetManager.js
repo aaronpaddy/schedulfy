@@ -233,7 +233,7 @@ const CourseDatasetManager = () => {
       const response = await courseAPI.importCourses(mockFile);
       setImportResult(response.data);
       
-      // Show success message with option to generate schedule
+      // Show success message with option to build schedule with AI
       setMessage({
         type: 'success',
         text: `Successfully imported ${response.data.imported} scraped courses! You can now generate a schedule with these courses.`
@@ -247,9 +247,9 @@ const CourseDatasetManager = () => {
       
               // Show option to navigate to schedule generator
         if (response.data.imported > 0) {
-          if (window.confirm(`Great! ${response.data.imported} courses have been imported. Would you like to go to the Schedule Generator to create a schedule with these courses?`)) {
-            // Navigate to schedule generator using React Router
-            navigate('/generate');
+          if (window.confirm(`Great! ${response.data.imported} courses have been imported. Would you like to go to the AI Schedule Builder to create a schedule with these courses?`)) {
+            // Navigate to AI schedule builder using React Router
+            navigate('/ai-builder');
           }
         }
     } catch (error) {
@@ -685,7 +685,7 @@ const CourseDatasetManager = () => {
           <Alert severity="info" sx={{ mb: 3 }}>
             <Typography variant="body2">
               <strong>💡 Tip:</strong> All courses are pre-selected by default. 
-              After importing, you'll be able to generate schedules with these courses!
+              After importing, you'll be able to build schedules with these courses using the AI Builder!
             </Typography>
           </Alert>
 

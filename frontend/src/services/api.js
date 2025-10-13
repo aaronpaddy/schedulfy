@@ -6,6 +6,7 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  withCredentials: true, // Enable sending cookies with requests
 });
 
 // API service objects
@@ -95,7 +96,8 @@ export const userAPI = {
   },
 
   getUserSchedules: (userId) => {
-    return api.get(`/users/${userId}/schedules`);
+    // Backend uses session-based auth, so no userId needed
+    return api.get(`/schedules`);
   },
   
   getUserPreferences: (userId) => {
@@ -110,6 +112,47 @@ export const userAPI = {
 export const requirementsAPI = {
   getRequirements: (major) => {
     return api.get(`/requirements/${major}`);
+  },
+};
+
+export const authAPI = {
+  signup: (userData) => {
+    return api.post('/auth/signup', userData);
+  },
+
+  login: (credentials) => {
+    return api.post('/auth/login', credentials);
+  },
+
+  logout: () => {
+    return api.post('/auth/logout');
+  },
+
+  getCurrentUser: () => {
+    return api.get('/auth/me');
+  },
+
+  checkAuth: () => {
+    return api.get('/auth/check');
+  },
+};
+
+// AI-powered API endpoints
+export const aiAPI = {
+  getRecommendations: (data) => {
+    return api.post('/ai/recommendations', data);
+  },
+
+  chat: (message, includeHistory = true) => {
+    return api.post('/ai/chat', { message, include_history: includeHistory });
+  },
+
+  predictWorkload: (courseIds) => {
+    return api.post('/ai/workload-prediction', { course_ids: courseIds });
+  },
+
+  analyzeSchedule: (scheduleId) => {
+    return api.get(`/ai/analyze-schedule/${scheduleId}`);
   },
 };
 

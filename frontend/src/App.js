@@ -1,14 +1,17 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import { CssBaseline } from '@mui/material';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Navbar from './components/Navbar';
 import Dashboard from './pages/Dashboard';
 import CourseCatalog from './pages/CourseCatalog';
-import ScheduleGenerator from './pages/ScheduleGenerator';
 import ScheduleViewer from './pages/ScheduleViewer';
 import UserProfile from './pages/UserProfile';
 import CourseDatasetManager from './pages/CourseDatasetManager';
+import AIScheduleBuilder from './pages/AIScheduleBuilder';
+import Login from './pages/Login';
+import Signup from './pages/Signup';
 
 const theme = createTheme({
   palette: {
@@ -167,25 +170,152 @@ const theme = createTheme({
   },
 });
 
+// Protected Route Component
+const ProtectedRoute = ({ children }) => {
+  const { authenticated, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        minHeight: '100vh' 
+      }}>
+        Loading...
+      </div>
+    );
+  }
+
+  if (!authenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return children;
+};
+
+// Public Route Component (redirect to dashboard if already logged in)
+const PublicRoute = ({ children }) => {
+  const { authenticated, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        minHeight: '100vh' 
+      }}>
+        Loading...
+      </div>
+    );
+  }
+
+  if (authenticated) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return children;
+};
+
+function AppContent() {
+  return (
+    <div className="App" style={{ backgroundColor: '#f8f9fa', minHeight: '100vh' }}>
+      <Navbar />
+      <div style={{ paddingTop: '80px' }}>
+        <Routes>
+          {/* Public routes */}
+          <Route 
+            path="/login" 
+            element={
+              <PublicRoute>
+                <Login />
+              </PublicRoute>
+            } 
+          />
+          <Route 
+            path="/signup" 
+            element={
+              <PublicRoute>
+                <Signup />
+              </PublicRoute>
+            } 
+          />
+
+          {/* Protected routes */}
+          <Route 
+            path="/" 
+            element={
+              <ProtectedRoute>
+                <Dashboard />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/dashboard" 
+            element={
+              <ProtectedRoute>
+                <Dashboard />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/courses" 
+            element={
+              <ProtectedRoute>
+                <CourseCatalog />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/ai-builder" 
+            element={
+              <ProtectedRoute>
+                <AIScheduleBuilder />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/schedule/:id" 
+            element={
+              <ProtectedRoute>
+                <ScheduleViewer />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/profile" 
+            element={
+              <ProtectedRoute>
+                <UserProfile />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/dataset-manager" 
+            element={
+              <ProtectedRoute>
+                <CourseDatasetManager />
+              </ProtectedRoute>
+            } 
+          />
+
+          {/* Catch all - redirect to login */}
+          <Route path="*" element={<Navigate to="/login" replace />} />
+        </Routes>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <Router>
-        <div className="App" style={{ backgroundColor: '#f8f9fa', minHeight: '100vh' }}>
-          <Navbar />
-          <div style={{ paddingTop: '80px' }}>
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/courses" element={<CourseCatalog />} />
-              <Route path="/generate" element={<ScheduleGenerator />} />
-              <Route path="/schedule/:id" element={<ScheduleViewer />} />
-              <Route path="/profile" element={<UserProfile />} />
-              <Route path="/dataset-manager" element={<CourseDatasetManager />} />
-            </Routes>
-          </div>
-        </div>
+        <AuthProvider>
+          <AppContent />
+        </AuthProvider>
       </Router>
     </ThemeProvider>
   );

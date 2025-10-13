@@ -33,6 +33,7 @@ import {
   ViewWeek as ViewWeekIcon,
   Download as DownloadIcon,
   ArrowBack as ArrowBackIcon,
+  AutoAwesome as AutoAwesomeIcon,
 } from '@mui/icons-material';
 import { scheduleAPI, courseAPI } from '../services/api';
 
@@ -80,7 +81,9 @@ const ScheduleViewer = () => {
   const fetchAvailableCourses = async () => {
     try {
       const response = await courseAPI.getCourses();
-      setAvailableCourses(response.data);
+      // Handle new API response format { courses: [...], total: ... }
+      const coursesData = response.data.courses || response.data;
+      setAvailableCourses(coursesData);
     } catch (err) {
       console.error('Available courses fetch error:', err);
     }
@@ -91,17 +94,16 @@ const ScheduleViewer = () => {
     setEditDialogOpen(true);
   };
 
+  const handleGetAISuggestions = () => {
+    // Navigate to AI Builder with current schedule context
+    navigate(`/ai-builder?scheduleId=${id}`);
+  };
+
   const handleAddCourse = (courseId) => {
     const course = availableCourses.find(c => c.id === courseId);
     if (!course) return;
 
-    // Check for conflicts
-    const conflicts = checkForConflicts([...selectedCourses, courseId]);
-    if (conflicts.length > 0) {
-      alert(`Conflict detected: ${conflicts.map(c => c.conflict).join(', ')}`);
-      return;
-    }
-
+    // Add the course - backend will check for real conflicts when saving
     setSelectedCourses(prev => [...prev, courseId]);
   };
 
@@ -109,37 +111,8 @@ const ScheduleViewer = () => {
     setSelectedCourses(prev => prev.filter(id => id !== courseId));
   };
 
-  const checkForConflicts = (courseIds) => {
-    const courses = availableCourses.filter(c => courseIds.includes(c.id));
-    const conflicts = [];
-    
-    for (let i = 0; i < courses.length; i++) {
-      for (let j = i + 1; j < courses.length; j++) {
-        const course1 = courses[i];
-        const course2 = courses[j];
-        
-        if (course1.time_slots && course2.time_slots) {
-          for (const slot1 of course1.time_slots) {
-            for (const slot2 of course2.time_slots) {
-              if (slot1.day === slot2.day) {
-                conflicts.push({
-                  course1: course1.code,
-                  course2: course2.code,
-                  conflict: `Time conflict on ${slot1.day}`
-                });
-              }
-            }
-          }
-        }
-      }
-    }
-    
-    return conflicts;
-  };
-
-  const hasTimeConflict = (slot1, slot2) => {
-    return slot1.day === slot2.day;
-  };
+  // All conflict checking is now handled by the backend
+  // The backend properly checks both days AND times, not just days
 
   const handleUpdateSchedule = async () => {
     try {
@@ -149,11 +122,48 @@ const ScheduleViewer = () => {
       fetchSchedule();
       fetchWeeklySchedule();
     } catch (err) {
-      if (err.response?.status === 400 && err.response?.data?.conflicts) {
-        const conflicts = err.response.data.conflicts;
-        const conflictCount = conflicts.length;
-        const conflictCourses = conflicts.map(c => `${c.course1} vs ${c.course2}`).join('\n');
-        alert(`Schedule conflicts detected: ${conflictCount} time conflict${conflictCount > 1 ? 's' : ''} found:\n\n${conflictCourses}\n\nThese courses overlap and you couldn't attend them all. Use "Force Update" to save despite conflicts.`);
+      if (err.response?.status === 400) {
+        const errorData = err.response.data;
+        
+        // Check for credit limit error
+        if (errorData.total_credits && errorData.max_credits) {
+          const shouldForce = window.confirm(
+            `⚠️ Credit Limit Exceeded!\n\n` +
+            `Total: ${errorData.total_credits} credits\n` +
+            `Your limit: ${errorData.max_credits} credits\n\n` +
+            `This exceeds your maximum by ${errorData.total_credits - errorData.max_credits} credits.\n\n` +
+            `You can:\n` +
+            `• Click "Cancel" and remove some courses\n` +
+            `• Click "OK" to force save anyway (may require dean approval at your university)\n` +
+            `• Update your max credits in Profile Settings\n\n` +
+            `Do you want to force save this schedule?`
+          );
+          
+          if (shouldForce) {
+            try {
+              await scheduleAPI.updateSchedule(id, selectedCourses, true);
+              setEditDialogOpen(false);
+              fetchSchedule();
+              fetchWeeklySchedule();
+              alert('Schedule saved! Note: This exceeds your credit limit and may require special permission.');
+            } catch (forceErr) {
+              const forceErrorMsg = forceErr.response?.data?.error || forceErr.message || 'Unknown error';
+              alert(`Failed to update schedule: ${forceErrorMsg}`);
+              console.error('Force update error:', forceErr);
+            }
+          }
+        }
+        // Check for time conflicts
+        else if (errorData.conflicts) {
+          const conflicts = errorData.conflicts;
+          const conflictCount = conflicts.length;
+          const conflictCourses = conflicts.map(c => `${c.course1} vs ${c.course2}`).join('\n');
+          alert(`Schedule conflicts detected: ${conflictCount} time conflict${conflictCount > 1 ? 's' : ''} found:\n\n${conflictCourses}\n\nThese courses overlap and you couldn't attend them all. Use "Force Update" to save despite conflicts.`);
+        }
+        // Other 400 errors
+        else {
+          alert(errorData.error || 'Failed to update schedule');
+        }
       } else {
         alert('Failed to update schedule');
       }
@@ -185,11 +195,15 @@ const ScheduleViewer = () => {
             fetchSchedule();
             fetchWeeklySchedule();
           } catch (forceErr) {
-            alert('Failed to update schedule even with force update');
+            const forceErrorMsg = forceErr.response?.data?.error || forceErr.message || 'Unknown error';
+            alert(`Failed to update schedule: ${forceErrorMsg}`);
+            console.error('Force update error:', forceErr);
           }
         }
       } else {
-        alert('Failed to remove course');
+        const errorMsg = err.response?.data?.error || err.message || 'Unknown error';
+        alert(`Failed to remove course: ${errorMsg}`);
+        console.error('Remove course error:', err);
       }
     }
   };
@@ -260,6 +274,19 @@ const ScheduleViewer = () => {
           onClick={handleEditSchedule}
         >
           Edit Schedule
+        </Button>
+        <Button
+          variant="contained"
+          startIcon={<AutoAwesomeIcon />}
+          onClick={handleGetAISuggestions}
+          sx={{
+            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            '&:hover': {
+              background: 'linear-gradient(135deg, #764ba2 0%, #667eea 100%)',
+            },
+          }}
+        >
+          Get AI Suggestions
         </Button>
         <Button
           variant="outlined"

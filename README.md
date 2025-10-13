@@ -1,75 +1,104 @@
-# 🎓 Smart Course Scheduler
+# 🎓 Schedulfy - AI-Powered Course Scheduler
 
-A full-stack web application that intelligently generates conflict-free course schedules for university students based on their major requirements, preferences, and completed courses.
+An intelligent, AI-powered course scheduling platform for university students. Built with GPT-4, Schedulfy provides personalized course recommendations, conflict-free scheduling, and natural language chat assistance to help you plan your perfect academic schedule.
 
-## ✨ Features
+## ✨ Key Features
 
-### 🧠 Smart Scheduling
-- **Intelligent Course Selection**: Multi-factor scoring algorithm prioritizes courses based on:
-  - Curriculum requirements (core courses, math/science, general education)
-  - Preferred departments and time preferences
-  - Course levels (lower-level courses prioritized)
-  - Available time slots
-- **Conflict Detection**: Advanced time conflict detection prevents overlapping schedules
-- **Curriculum Alignment**: Automatically maps courses to degree requirements for Computer Science, Mathematics, and Engineering
+### 🤖 AI-Powered Features
+
+- **AI Chat Assistant**: Natural language interface powered by GPT-4
+  - Ask questions about courses in plain English
+  - Get personalized recommendations based on your schedule
+  - Context-aware suggestions that understand your current courses and credits
+  - Conversational interface for building schedules
+
+- **Intelligent Course Recommendations**: AI analyzes your profile and suggests optimal courses
+  - Major-specific recommendations
+  - Career goal alignment
+  - Prerequisite awareness
+  - Workload balancing
+
+- **AI Schedule Builder**: Unified interface combining:
+  - Natural language chat for course discovery
+  - Visual schedule builder with drag-and-drop
+  - Real-time AI recommendations
+  - Workload predictions and analytics
+
+- **Smart Conflict Detection**: Automatic time conflict checking
+  - Prevents overlapping courses
+  - Warns about scheduling issues
+  - Suggests alternatives
 
 ### 📚 Course Management
-- **Web Scraping**: Automatically extract course information from university websites
-- **Data Import/Export**: Support for CSV and JSON course data
-- **Enhanced Scraping**: Get detailed schedule information including times, days, and room locations
-- **Course Catalog**: Browse and search available courses with full details
 
-### 🗓️ Schedule Management
-- **Weekly View**: Visual weekly schedule with real-time conflict detection
-- **Schedule Generation**: Create new schedules or update existing ones for different terms
-- **User Preferences**: Store and apply user preferences for departments, times, and completed courses
-- **Export Options**: Export schedules in various formats
+- **Course Dataset Manager**:
+  - Import courses from CSV/JSON files
+  - Export schedules in multiple formats
+  - Web scraping for university course catalogs
+  - Course catalog browser with search and filters
+
+- **Schedule Management**:
+  - Create multiple schedules per semester
+  - Weekly calendar view
+  - Edit existing schedules with AI suggestions
+  - Save and manage multiple schedule versions
 
 ### 👤 User Experience
-- **Responsive Design**: Material-UI components for optimal cross-device experience
-- **User Profiles**: Manage personal information, major, graduation year, and preferences
-- **Dashboard**: Overview of all schedules and user statistics
-- **Real-time Updates**: Immediate feedback on schedule changes and conflicts
 
-## 🏗️ Architecture
+- **User Authentication**: Secure login and signup
+- **User Profiles**: 
+  - Personal information (major, graduation year, classification)
+  - Career goals for personalized AI recommendations
+  - Preference management
+- **Modern Dashboard**: 
+  - Overview of all schedules
+  - Stats cards showing courses, credits, and progress
+  - Quick access to AI Builder
+- **Responsive Design**: Works seamlessly on desktop and mobile
+
+## 🏗️ Tech Stack
 
 ### Frontend
-- **React.js** with modern hooks and functional components
-- **Material-UI** for professional, responsive design
-- **React Router** for navigation and routing
-- **Axios** for API communication
-- **Local Storage** for data persistence
+- **React.js** - Modern UI with hooks and functional components
+- **Material-UI** - Professional, responsive design system
+- **React Router** - Client-side routing
+- **Context API** - State management for authentication
 
 ### Backend
-- **Flask** Python web framework
-- **SQLAlchemy** ORM with SQLite database
-- **RESTful APIs** for all operations
-- **BeautifulSoup4** for web scraping
-- **Advanced algorithms** for course selection and conflict detection
+- **Flask** - Python web framework
+- **Python** - Backend logic and AI integration
+- **SQLAlchemy ORM** with **SQLite** database
+- **OpenAI GPT-4** - Natural language processing and recommendations
+- **BeautifulSoup4** - Web scraping for course data
 
-### Database Models
-- **User**: Profile information, preferences, major, graduation year
-- **Course**: Course details, time slots, department, credits
-- **Schedule**: User schedules with course associations
-- **Relationships**: Many-to-many between users, schedules, and courses
+### AI/ML Stack
+- **OpenAI API** - GPT-4 for conversational AI
+- **scikit-learn** - Machine learning predictions
+- **pandas & numpy** - Data processing
+- **Custom recommendation engine** - Course matching algorithms
 
 ## 🚀 Getting Started
 
 ### Prerequisites
 - Python 3.8+
 - Node.js 14+
-- npm or yarn
+- OpenAI API key
 
 ### Backend Setup
 ```bash
 cd backend
 python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-python3 app.py
+
+# Create .env file with your OpenAI API key
+echo "OPENAI_API_KEY=your-api-key-here" > .env
+echo "SECRET_KEY=your-secret-key-here" >> .env
+
+python app_ai.py
 ```
 
-The backend will run on `http://localhost:5003`
+Backend runs on `http://localhost:5003`
 
 ### Frontend Setup
 ```bash
@@ -78,133 +107,193 @@ npm install
 npm start
 ```
 
-The frontend will run on `http://localhost:3000`
+Frontend runs on `http://localhost:3000`
 
-## 📖 Usage
+### First Time Setup
+1. **Sign up** for an account
+2. **Set your profile**: major, graduation year, classification
+3. **Import courses** via Dataset Manager (CSV/JSON or web scraping)
+4. **Start building** your schedule with AI assistance!
 
-### 1. User Profile Setup
-- Set your major (Computer Science, Mathematics, Engineering)
-- Add completed courses
-- Set preferred departments and times
+## 📖 How to Use
 
-### 2. Course Import
-- **Web Scraping**: Enter university course catalog URLs
-- **Enhanced Scraping**: Get detailed schedule information
-- **CSV/JSON Import**: Upload course data files
+### 1. Create Your Profile
+- Set major, graduation year, and current year classification
+- Add career goals for better AI recommendations
+- Configure max credits per semester
 
-### 3. Schedule Generation
-- Select semester and year
-- Set target credits
-- Generate intelligent schedule based on preferences
-- Review and modify as needed
+### 2. Import Course Data
+**Option A: File Upload**
+- Go to Dataset Manager
+- Upload CSV or JSON file with course data
+- System validates and imports courses
 
-### 4. Schedule Management
-- View weekly schedule layout
-- Check for time conflicts
-- Export schedules
-- Delete or update existing schedules
+**Option B: Web Scraping**
+- Enter university course catalog URL
+- System extracts course information
+- Review and import selected courses
+
+### 3. Build Your Schedule with AI
+**Start from scratch:**
+- Click "AI Builder" in navigation
+- Chat with AI about your requirements
+- Add recommended courses to your schedule
+- Save when satisfied
+
+**Add to existing schedule:**
+- Go to Dashboard → View schedule → "AI Suggestions"
+- AI sees your current courses and remaining credits
+- Get context-aware recommendations
+- Add courses and save changes
+
+### 4. AI Chat Tips
+Try asking:
+- "I need 15 credits with no Friday classes"
+- "What courses go well with Data Structures?"
+- "Suggest courses for machine learning career"
+- "Can you see my current schedule?"
+- "I want to balance my workload this semester"
 
 ## 🔧 API Endpoints
 
-### Courses
-- `GET /api/courses` - Get all courses
+### AI Endpoints
+- `POST /api/ai/chat` - Chat with AI assistant
+- `GET /api/ai/recommendations` - Get AI course recommendations
+- `POST /api/ai/suggest-for-schedule/<id>` - Get suggestions for existing schedule
+- `POST /api/ai/workload-prediction` - Predict course workload
+- `POST /api/ai/analyze-schedule` - Analyze schedule difficulty
+
+### Course Endpoints
+- `GET /api/courses` - List all courses
 - `GET /api/courses/<id>` - Get course details
 - `POST /api/courses/import` - Import courses from file
 - `POST /api/courses/scrape` - Scrape courses from URL
 - `GET /api/courses/export` - Export courses to CSV
 - `DELETE /api/courses/clear` - Clear all courses
 
-### Schedules
+### Schedule Endpoints
+- `GET /api/schedules` - Get user's schedules
 - `POST /api/schedule/generate` - Generate new schedule
 - `GET /api/schedule/<id>` - Get schedule details
 - `PUT /api/schedule/<id>` - Update schedule
 - `DELETE /api/schedule/<id>` - Delete schedule
-- `GET /api/schedule/<id>/weekly` - Get weekly view
+- `GET /api/schedule/<id>/weekly` - Get weekly calendar view
 
-### Users
-- `POST /api/users` - Create user
+### User Endpoints
+- `POST /api/auth/signup` - Create account
+- `POST /api/auth/login` - Login
+- `POST /api/auth/logout` - Logout
+- `GET /api/auth/check` - Check auth status
 - `GET /api/users/<id>` - Get user profile
-- `PUT /api/users/<id>` - Update user
-- `GET /api/users/<id>/preferences` - Get/update preferences
+- `PUT /api/users/<id>` - Update profile
+- `GET/PUT /api/users/<id>/preferences` - Manage preferences
 
-### Requirements
-- `GET /api/requirements/<major>` - Get degree requirements
+## 🤖 How the AI Works
 
-## 🧮 Smart Algorithm Details
+### Context-Aware Recommendations
+The AI considers:
+- Your major and career goals
+- Current year classification (Freshman, Sophomore, etc.)
+- Courses already in your schedule
+- Remaining credits available
+- Time conflicts
+- Prerequisites and course sequences
+- Workload balance
 
-### Course Scoring System
-1. **Curriculum Requirements** (Highest Priority)
-   - Core courses: +50 points
-   - Math requirements: +40 points
-   - Science requirements: +35 points
-   - General education: +30 points
+### Natural Language Understanding
+GPT-4 processes your requests and:
+- Understands scheduling constraints
+- Suggests appropriate courses
+- Explains recommendations
+- Answers course-related questions
+- Maintains conversation context
 
-2. **User Preferences**
-   - Preferred departments: +20 points
-   - Preferred times: +10 points
+### Intelligent Features
+- **Conflict Prevention**: Won't suggest courses that overlap
+- **Credit Limits**: Respects your max credits per semester
+- **Smart Suggestions**: Considers your schedule when recommending
+- **Conversational**: Natural back-and-forth dialogue
 
-3. **Course Characteristics**
-   - Lower level (100-299): +15 points
-   - Upper level (300-399): +10 points
-   - Graduate level (400+): +5 points
+## 📁 Project Structure
 
-4. **Schedule Quality**
-   - Has time slots: +25 points
-   - No time slots: -15 points
-
-### Conflict Detection
-- **Time Parsing**: Converts time strings to minutes for accurate comparison
-- **Overlap Detection**: Checks for time conflicts between courses
-- **Day Matching**: Handles single and multiple day schedules
-- **Room Conflicts**: Identifies potential room scheduling issues
-
-## 🌟 Advanced Features
-
-### Web Scraping Capabilities
-- **Catalog Pages**: Extract multiple courses from department listings
-- **Schedule Pages**: Get detailed time slot information
-- **Enhanced Mode**: Combine catalog and schedule data for complete course information
-- **Multiple Formats**: Support for various university website structures
-
-### Data Management
-- **Duplicate Prevention**: Smart handling of duplicate courses
-- **Data Validation**: Ensures course data integrity
-- **Flexible Import**: Support for multiple data formats and structures
-- **Export Options**: Multiple export formats for different use cases
-
-## 🛠️ Development
-
-### Project Structure
 ```
-smart-course-scheduler/
-├── backend/           # Flask backend
-│   ├── app.py        # Main application
-│   ├── requirements.txt
-│   └── venv/
-├── frontend/          # React frontend
+schedulfy/
+├── backend/
+│   ├── app_ai.py              # Main Flask application with AI routes
+│   ├── ai_service.py          # AI/ML logic and OpenAI integration
+│   ├── models.py              # SQLAlchemy database models
+│   ├── load_sample_data.py    # Sample data loader
+│   ├── requirements.txt       # Python dependencies
+│   └── instance/
+│       └── courses.db         # SQLite database
+├── frontend/
 │   ├── src/
 │   │   ├── components/
+│   │   │   ├── AIChatBot.js           # AI chat interface
+│   │   │   ├── AIRecommendations.js   # AI course suggestions
+│   │   │   ├── WorkloadDashboard.js   # Workload analytics
+│   │   │   └── Navbar.js              # Navigation
 │   │   ├── pages/
+│   │   │   ├── AIScheduleBuilder.js   # Main AI builder page
+│   │   │   ├── Dashboard.js           # User dashboard
+│   │   │   ├── ScheduleViewer.js      # Schedule details
+│   │   │   ├── CourseCatalog.js       # Course browser
+│   │   │   ├── UserProfile.js         # Profile management
+│   │   │   ├── Login.js               # Authentication
+│   │   │   └── Signup.js
+│   │   ├── contexts/
+│   │   │   └── AuthContext.js         # Authentication state
 │   │   └── services/
+│   │       └── api.js                 # API client
 │   └── package.json
-├── database/          # Database files
-└── docs/             # Documentation
+└── README.md
 ```
 
-### Key Components
-- **CourseDatasetManager**: Import/export and web scraping interface
-- **ScheduleGenerator**: Smart schedule generation with preferences
-- **ScheduleViewer**: Weekly schedule display and management
-- **UserProfile**: User preferences and profile management
-- **Dashboard**: Overview and navigation hub
+## 🎯 Key Components
+
+### Backend
+- **AIRecommender**: GPT-4 integration for course recommendations
+- **WorkloadPredictor**: ML-based workload estimation
+- **CourseIntelligence**: Course similarity and analysis
+- **Authentication**: Flask-Login for user sessions
+- **Conflict Checker**: Time overlap detection
+
+### Frontend
+- **AIScheduleBuilder**: Main scheduling interface
+- **AIChatBot**: Natural language course assistant
+- **AIRecommendations**: Visual course suggestion cards
+- **Dashboard**: User overview and schedule management
+- **AuthContext**: Global authentication state
+
+## 🔐 Environment Variables
+
+Create `backend/.env`:
+```bash
+OPENAI_API_KEY=sk-your-openai-api-key
+SECRET_KEY=your-flask-secret-key
+FLASK_ENV=development
+FLASK_DEBUG=True
+DATABASE_URL=sqlite:///courses.db
+MAX_CREDITS_PER_SEMESTER=18
+CORS_ORIGINS=http://localhost:3000
+```
+
+## 🌟 What Makes Schedulfy Different
+
+1. **AI-First Design**: Built around GPT-4 from the ground up
+2. **Context Awareness**: AI knows your current schedule and constraints
+3. **Natural Language**: Talk to your scheduler like a human advisor
+4. **Smart Conflicts**: Automatic conflict detection and prevention
+5. **Modern UX**: Beautiful, responsive design with Material-UI
+6. **Full-Stack**: Complete solution from database to AI to UI
 
 ## 🤝 Contributing
 
 1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
 ## 📝 License
 
@@ -212,17 +301,23 @@ This project is open source and available under the [MIT License](LICENSE).
 
 ## 🎯 Future Enhancements
 
-- **Machine Learning**: Predictive course recommendations
-- **Calendar Integration**: Google Calendar, Outlook sync
-- **Mobile App**: React Native or Flutter mobile application
-- **Advanced Analytics**: Schedule optimization suggestions
-- **Multi-University Support**: Expand beyond Illinois curriculum
-- **Real-time Updates**: Live course availability and waitlist management
+- **Advanced ML Models**: Custom trained models for better predictions
+- **Multi-University Support**: Expand beyond single institution
+- **Mobile App**: Native mobile applications
+- **Calendar Integration**: Sync with Google Calendar, Outlook
+- **Social Features**: Share schedules with friends
+- **Professor Ratings**: Integrate RateMyProfessor data
+- **Real-time Updates**: Live course availability tracking
 
 ## 📞 Support
 
-For questions or issues, please open a GitHub issue or contact the development team.
+For questions or issues:
+- Open a GitHub issue
+- Check existing documentation
+- Contact the development team
 
 ---
 
-**Built with ❤️ for students who want smarter course scheduling**
+**Built with ❤️ and 🤖 AI for students who want smarter, easier course scheduling**
+
+*Powered by GPT-4 • React.js • Flask • Python • SQLite • BeautifulSoup4*

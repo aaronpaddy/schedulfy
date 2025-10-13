@@ -79,9 +79,12 @@ const Dashboard = () => {
       try {
           const schedulesResponse = await userAPI.getUserSchedules(userId);
           
-          if (schedulesResponse.data && schedulesResponse.data.length > 0) {
+          // Handle new API format: { schedules: [...] }
+          const schedulesData = schedulesResponse.data.schedules || schedulesResponse.data || [];
+          
+          if (schedulesData && schedulesData.length > 0) {
             const schedulesWithDetails = await Promise.all(
-              schedulesResponse.data.map(async (schedule) => {
+              schedulesData.map(async (schedule) => {
                 try {
                   const scheduleDetails = await scheduleAPI.getSchedule(schedule.id);
                   return scheduleDetails.data;
@@ -107,7 +110,7 @@ const Dashboard = () => {
     };
 
     fetchDashboardData();
-  }, []);
+  }, [userId]);
 
   const handleDeleteSchedule = async () => {
     if (!scheduleToDelete) return;
@@ -165,114 +168,54 @@ const Dashboard = () => {
         <Paper 
           elevation={0}
           sx={{ 
-            p: 4, 
-            mb: 5, 
-            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            p: 2.5, 
+            mb: 3, 
+            background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
             color: 'white', 
-            borderRadius: 4,
-            position: 'relative',
-            overflow: 'hidden',
-            transition: 'all 0.3s ease',
-            '&:hover': {
-              transform: 'translateY(-2px)',
-              boxShadow: '0 8px 25px rgba(102, 126, 234, 0.3)',
-            },
-            '&::before': {
-              content: '""',
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              background: 'url("data:image/svg+xml,%3Csvg width="60" height="60" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg"%3E%3Cg fill="none" fill-rule="evenodd"%3E%3Cg fill="%23ffffff" fill-opacity="0.05"%3E%3Ccircle cx="30" cy="30" r="2"/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")',
-              opacity: 0.8,
-            }
+            borderRadius: 2,
+            border: '1px solid rgba(255,255,255,0.1)',
           }}
         >
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'relative', zIndex: 1 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <Box sx={{ flex: 1 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center' }}>
                 <Avatar 
                   sx={{ 
-                    width: 70, 
-                    height: 70, 
-                    bgcolor: 'rgba(255,255,255,0.15)',
-                    border: '3px solid rgba(255,255,255,0.3)',
-                    mr: 3,
-                    boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
+                    width: 48, 
+                    height: 48, 
+                    bgcolor: 'rgba(255,255,255,0.1)',
+                    mr: 2,
                   }}
                 >
-                  <PersonIcon sx={{ fontSize: 35, color: 'white' }} />
+                  <PersonIcon sx={{ fontSize: 24, color: 'white' }} />
                 </Avatar>
                 <Box>
-                  <Typography variant="h4" fontWeight="700" gutterBottom sx={{ textShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
+                  <Typography variant="h6" fontWeight="600" sx={{ mb: 0.5 }}>
                     {userData.username || 'User'}
                   </Typography>
-                  <Typography variant="h6" sx={{ opacity: 0.95, fontWeight: 500, mb: 1 }}>
-                    {userData.major || 'Major not set'}
-                  </Typography>
-                  <Typography variant="body1" sx={{ opacity: 0.9, fontWeight: 400 }}>
-                    Graduation Year: {userData.graduation_year || 'Not set'}
+                  <Typography variant="body2" sx={{ opacity: 0.85 }}>
+                    {userData.major || 'Major not set'} • Class of {userData.graduation_year || 'N/A'}
                   </Typography>
                 </Box>
               </Box>
-              
-              {userData.preferences && userData.preferences.preferred_departments && userData.preferences.preferred_departments.length > 0 && (
-                <Box sx={{ mt: 3 }}>
-                  <Typography variant="body2" sx={{ opacity: 0.8, mb: 1, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    Preferred Departments
-                  </Typography>
-                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                    {userData.preferences.preferred_departments.map((dept, index) => (
-                      <Chip
-                        key={index}
-                        label={dept}
-                        sx={{
-                          backgroundColor: 'white !important',
-                          color: '#4a5568 !important',
-                          border: '1px solid #e2e8f0 !important',
-                          fontWeight: 500,
-                          transition: 'all 0.2s ease',
-                          cursor: 'pointer',
-                          '& .MuiChip-label': {
-                            color: '#4a5568 !important',
-                          },
-                          '&:hover': {
-                            backgroundColor: '#f7fafc !important',
-                            transform: 'translateY(-1px)',
-                            boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-                          },
-                        }}
-                      />
-                    ))}
-                  </Box>
-                </Box>
-              )}
             </Box>
             
-            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', ml: 3 }}>
-              <Box sx={{ 
-                display: 'flex', 
-                flexDirection: 'column', 
-                alignItems: 'center',
-                p: 3,
-                bgcolor: 'rgba(255,255,255,0.12)',
-                borderRadius: 3,
-                border: '1px solid rgba(255,255,255,0.25)',
-                minWidth: 140,
-                backdropFilter: 'blur(10px)',
-                transition: 'all 0.3s ease',
-                '&:hover': {
-                  bgcolor: 'rgba(255,255,255,0.18)',
-                  transform: 'scale(1.02)',
-                }
-              }}>
-                <ScheduleIcon sx={{ fontSize: 28, opacity: 0.9, mb: 1 }} />
-                <Typography variant="h4" sx={{ opacity: 0.95, fontWeight: 700, lineHeight: 1 }}>
+            <Box sx={{ 
+              display: 'flex', 
+              alignItems: 'center',
+              gap: 1,
+              px: 2,
+              py: 1,
+              bgcolor: 'rgba(255,255,255,0.1)',
+              borderRadius: 1,
+            }}>
+              <ScheduleIcon sx={{ fontSize: 20, opacity: 0.9 }} />
+              <Box>
+                <Typography variant="h6" fontWeight="700" sx={{ lineHeight: 1.2 }}>
                   {recentSchedules.length}
                 </Typography>
-                <Typography variant="body2" sx={{ opacity: 0.9, textAlign: 'center', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                  Active Schedules
+                <Typography variant="caption" sx={{ opacity: 0.8 }}>
+                  Schedules
                 </Typography>
               </Box>
             </Box>
@@ -284,66 +227,40 @@ const Dashboard = () => {
       <Paper 
         elevation={0}
         sx={{
-          background: 'linear-gradient(135deg, #2c3e50 0%, #34495e 100%)',
+          background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
           color: 'white',
-          p: 5,
-          mb: 5,
-          borderRadius: 3,
+          p: 3,
+          mb: 4,
+          borderRadius: 2,
           textAlign: 'center',
-          position: 'relative',
-          overflow: 'hidden',
-          '&::before': {
-            content: '""',
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'url("data:image/svg+xml,%3Csvg width="60" height="60" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg"%3E%3Cg fill="none" fill-rule="evenodd"%3E%3Cg fill="%23ffffff" fill-opacity="0.03"%3E%3Ccircle cx="30" cy="30" r="2"/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")',
-            opacity: 0.5,
-          }
+          border: '1px solid rgba(255,255,255,0.1)',
         }}
       >
-        <Typography variant="h3" fontWeight="600" gutterBottom sx={{ position: 'relative', zIndex: 1 }}>
-          Welcome to Smart Course Scheduler
+        <Typography variant="h5" fontWeight="600" gutterBottom>
+          Smart Course Scheduler
         </Typography>
-        <Typography variant="h6" sx={{ opacity: 0.9, mb: 2, position: 'relative', zIndex: 1 }}>
-          Your intelligent academic planning companion
+        <Typography variant="body2" sx={{ opacity: 0.85 }}>
+          Plan your academic journey with AI-powered recommendations
         </Typography>
-        <Typography variant="body1" sx={{ opacity: 0.8, maxWidth: '600px', mx: 'auto', position: 'relative', zIndex: 1 }}>
-          Plan your academic journey with smart course recommendations, conflict-free scheduling, and personalized insights.
-        </Typography>
-        
-
       </Paper>
 
       {/* Stats Cards */}
       <Grid container spacing={3} sx={{ mb: 5 }}>
         <Grid item xs={12} sm={6} md={3}>
           <Card sx={{
-            background: 'linear-gradient(135deg, #3498db 0%, #2980b9 100%)',
+            background: 'linear-gradient(135deg, #475569 0%, #334155 100%)',
             color: 'white',
-            position: 'relative',
-            overflow: 'hidden',
-            '&::before': {
-              content: '""',
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              background: 'rgba(255, 255, 255, 0.1)',
-              zIndex: 1,
-            }
+            borderRadius: 2,
+            border: '1px solid rgba(255,255,255,0.1)',
           }}>
-            <CardContent sx={{ position: 'relative', zIndex: 2, p: 3 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                <ScheduleIcon sx={{ fontSize: 32, mr: 2, opacity: 0.9 }} />
+            <CardContent sx={{ p: 2.5 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                <ScheduleIcon sx={{ fontSize: 28, mr: 1.5, opacity: 0.9 }} />
                 <Box>
-                  <Typography variant="h3" fontWeight="600" sx={{ lineHeight: 1 }}>
+                  <Typography variant="h4" fontWeight="600" sx={{ lineHeight: 1 }}>
                     {recentSchedules.length}
                   </Typography>
-                  <Typography variant="body2" sx={{ opacity: 0.9 }}>
+                  <Typography variant="body2" sx={{ opacity: 0.85, fontSize: '0.875rem' }}>
                     Active Schedules
                   </Typography>
                 </Box>
@@ -354,29 +271,19 @@ const Dashboard = () => {
 
         <Grid item xs={12} sm={6} md={3}>
           <Card sx={{
-            background: 'linear-gradient(135deg, #27ae60 0%, #2ecc71 100%)',
+            background: 'linear-gradient(135deg, #64748b 0%, #475569 100%)',
             color: 'white',
-            position: 'relative',
-            overflow: 'hidden',
-            '&::before': {
-              content: '""',
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              background: 'rgba(255, 255, 255, 0.1)',
-              zIndex: 1,
-            }
+            borderRadius: 2,
+            border: '1px solid rgba(255,255,255,0.1)',
           }}>
-            <CardContent sx={{ position: 'relative', zIndex: 2, p: 3 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                <BookIcon sx={{ fontSize: 32, mr: 2, opacity: 0.9 }} />
+            <CardContent sx={{ p: 2.5 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                <BookIcon sx={{ fontSize: 28, mr: 1.5, opacity: 0.9 }} />
                 <Box>
-                  <Typography variant="h3" fontWeight="600" sx={{ lineHeight: 1 }}>
+                  <Typography variant="h4" fontWeight="600" sx={{ lineHeight: 1 }}>
                     {recentSchedules.reduce((total, schedule) => total + (schedule.courses?.length || 0), 0)}
                   </Typography>
-                  <Typography variant="body2" sx={{ opacity: 0.9 }}>
+                  <Typography variant="body2" sx={{ opacity: 0.85, fontSize: '0.875rem' }}>
                     Enrolled Courses
                   </Typography>
                 </Box>
@@ -387,29 +294,19 @@ const Dashboard = () => {
 
         <Grid item xs={12} sm={6} md={3}>
           <Card sx={{
-            background: 'linear-gradient(135deg, #e74c3c 0%, #c0392b 100%)',
+            background: 'linear-gradient(135deg, #1e3a5f 0%, #15293e 100%)',
             color: 'white',
-            position: 'relative',
-            overflow: 'hidden',
-            '&::before': {
-              content: '""',
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              background: 'rgba(255, 255, 255, 0.1)',
-              zIndex: 1,
-            }
+            borderRadius: 2,
+            border: '1px solid rgba(255,255,255,0.1)',
           }}>
-            <CardContent sx={{ position: 'relative', zIndex: 2, p: 3 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                <TrendingUpIcon sx={{ fontSize: 32, mr: 2, opacity: 0.9 }} />
+            <CardContent sx={{ p: 2.5 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                <TrendingUpIcon sx={{ fontSize: 28, mr: 1.5, opacity: 0.9 }} />
                 <Box>
-                  <Typography variant="h3" fontWeight="600" sx={{ lineHeight: 1 }}>
+                  <Typography variant="h4" fontWeight="600" sx={{ lineHeight: 1 }}>
                     {recentSchedules.reduce((total, schedule) => total + (schedule.total_credits || 0), 0)}
                   </Typography>
-                  <Typography variant="body2" sx={{ opacity: 0.9 }}>
+                  <Typography variant="body2" sx={{ opacity: 0.85, fontSize: '0.875rem' }}>
                     Total Credits
                   </Typography>
                 </Box>
@@ -420,29 +317,19 @@ const Dashboard = () => {
 
         <Grid item xs={12} sm={6} md={3}>
           <Card sx={{
-            background: 'linear-gradient(135deg, #9b59b6 0%, #8e44ad 100%)',
+            background: 'linear-gradient(135deg, #334155 0%, #1e293b 100%)',
             color: 'white',
-            position: 'relative',
-            overflow: 'hidden',
-            '&::before': {
-              content: '""',
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              background: 'rgba(255, 255, 255, 0.1)',
-              zIndex: 1,
-            }
+            borderRadius: 2,
+            border: '1px solid rgba(255,255,255,0.1)',
           }}>
-            <CardContent sx={{ position: 'relative', zIndex: 2, p: 3 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                <PersonIcon sx={{ fontSize: 32, mr: 2, opacity: 0.9 }} />
+            <CardContent sx={{ p: 2.5 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                <PersonIcon sx={{ fontSize: 28, mr: 1.5, opacity: 0.9 }} />
                 <Box>
-                  <Typography variant="h3" fontWeight="600" sx={{ lineHeight: 1 }}>
+                  <Typography variant="h4" fontWeight="600" sx={{ lineHeight: 1 }}>
                     1
                   </Typography>
-                  <Typography variant="body2" sx={{ opacity: 0.9 }}>
+                  <Typography variant="body2" sx={{ opacity: 0.85, fontSize: '0.875rem' }}>
                     Active User
                   </Typography>
                 </Box>
@@ -453,11 +340,11 @@ const Dashboard = () => {
       </Grid>
 
       {/* Progress Section */}
-      <Card sx={{ mb: 5, background: 'linear-gradient(135deg, #ecf0f1 0%, #bdc3c7 100%)' }}>
-        <CardContent sx={{ p: 4 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-            <TrendingUpIcon sx={{ mr: 2, fontSize: 28, color: 'primary.main' }} />
-            <Typography variant="h5" fontWeight="600" color="primary.main">
+      <Card sx={{ mb: 5, background: 'white', border: '1px solid #e2e8f0', borderRadius: 2 }}>
+        <CardContent sx={{ p: 3 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+            <TrendingUpIcon sx={{ mr: 1.5, fontSize: 24, color: '#475569' }} />
+            <Typography variant="h6" fontWeight="600" sx={{ color: '#1e293b' }}>
               Degree Progress
             </Typography>
           </Box>
@@ -466,7 +353,7 @@ const Dashboard = () => {
               <Typography variant="body2" color="text.secondary">
                 Progress towards graduation
               </Typography>
-              <Typography variant="body2" fontWeight="500" color="primary.main">
+              <Typography variant="body2" fontWeight="600" sx={{ color: '#475569' }}>
                 {Math.min(100, Math.round((recentSchedules.reduce((total, schedule) => total + (schedule.total_credits || 0), 0) / 120) * 100))}%
               </Typography>
             </Box>
@@ -476,15 +363,15 @@ const Dashboard = () => {
               sx={{ 
                 height: 8, 
                 borderRadius: 4,
-                backgroundColor: 'rgba(52, 152, 219, 0.2)',
+                backgroundColor: '#e2e8f0',
                 '& .MuiLinearProgress-bar': {
-                  background: 'linear-gradient(90deg, #3498db 0%, #2980b9 100%)',
+                  background: 'linear-gradient(90deg, #475569 0%, #334155 100%)',
                   borderRadius: 4,
                 }
               }} 
             />
           </Box>
-          <Typography variant="body2" color="text.secondary">
+          <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.875rem' }}>
             {recentSchedules.reduce((total, schedule) => total + (schedule.total_credits || 0), 0)} of 120 credits completed
           </Typography>
         </CardContent>
@@ -504,7 +391,7 @@ const Dashboard = () => {
               variant="contained"
               size="large"
               startIcon={<AddIcon />}
-              onClick={() => navigate('/generate')}
+              onClick={() => navigate('/ai-builder')}
               sx={{
                 background: 'linear-gradient(135deg, #3498db 0%, #2980b9 100%)',
                 boxShadow: '0 4px 12px rgba(52, 152, 219, 0.3)',
@@ -633,7 +520,7 @@ const Dashboard = () => {
                 variant="contained"
                 size="large"
                 startIcon={<AddIcon />}
-                onClick={() => navigate('/generate')}
+                onClick={() => navigate('/ai-builder')}
                 sx={{
                   background: 'linear-gradient(135deg, #3498db 0%, #2980b9 100%)',
                   boxShadow: '0 4px 12px rgba(52, 152, 219, 0.3)',
@@ -682,7 +569,7 @@ const Dashboard = () => {
                   variant="outlined"
                   size="large"
                   startIcon={<AddIcon />}
-                  onClick={() => navigate('/generate')}
+                  onClick={() => navigate('/ai-builder')}
                   sx={{
                     borderColor: 'rgba(255, 255, 255, 0.3)',
                     color: 'white',
