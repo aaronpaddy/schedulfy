@@ -100,14 +100,18 @@ const UserProfile = () => {
           };
           
           setUser(combinedUser);
-          // Sync with AuthContext to keep Navbar updated
-          updateAuthUser({
-            username: backendUser.username,
-            email: backendUser.email,
-            major: backendUser.major,
-            graduation_year: backendUser.graduation_year,
-            current_year: backendUser.current_year,
-          });
+          // Sync with AuthContext to keep Navbar updated (only if different)
+          if (backendUser.username !== authUser?.username || 
+              backendUser.email !== authUser?.email ||
+              backendUser.major !== authUser?.major) {
+            updateAuthUser({
+              username: backendUser.username,
+              email: backendUser.email,
+              major: backendUser.major,
+              graduation_year: backendUser.graduation_year,
+              current_year: backendUser.current_year,
+            });
+          }
           setFormData({
             username: backendUser.username || 'Student',
             email: backendUser.email || 'student@university.edu',
@@ -131,7 +135,7 @@ const UserProfile = () => {
     };
     
     loadFromBackend();
-  }, [userId, authUser]);
+  }, [userId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleInputChange = (field, value) => {
     setFormData(prev => ({
