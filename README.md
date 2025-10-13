@@ -1,10 +1,10 @@
-# 🎓 Schedulfy - AI-Powered Course Scheduler
+# Schedulfy - AI-Powered Course Scheduler
 
 An intelligent, AI-powered course scheduling platform for university students. Built with GPT-4, Schedulfy provides personalized course recommendations, conflict-free scheduling, and natural language chat assistance to help you plan your perfect academic schedule.
 
-## ✨ Key Features
+## Key Features
 
-### 🤖 AI-Powered Features
+### AI-Powered Features
 
 - **AI Chat Assistant**: Natural language interface powered by GPT-4
   - Ask questions about courses in plain English
@@ -29,7 +29,7 @@ An intelligent, AI-powered course scheduling platform for university students. B
   - Warns about scheduling issues
   - Suggests alternatives
 
-### 📚 Course Management
+### Course Management
 
 - **Course Dataset Manager**:
   - Import courses from CSV/JSON files
@@ -43,7 +43,7 @@ An intelligent, AI-powered course scheduling platform for university students. B
   - Edit existing schedules with AI suggestions
   - Save and manage multiple schedule versions
 
-### 👤 User Experience
+### User Experience
 
 - **User Authentication**: Secure login and signup
 - **User Profiles**: 
@@ -56,7 +56,7 @@ An intelligent, AI-powered course scheduling platform for university students. B
   - Quick access to AI Builder
 - **Responsive Design**: Works seamlessly on desktop and mobile
 
-## 🏗️ Tech Stack
+## Tech Stack
 
 ### Frontend
 - **React.js** - Modern UI with hooks and functional components
@@ -77,7 +77,7 @@ An intelligent, AI-powered course scheduling platform for university students. B
 - **pandas & numpy** - Data processing
 - **Custom recommendation engine** - Course matching algorithms
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 - Python 3.8+
@@ -115,7 +115,7 @@ Frontend runs on `http://localhost:3000`
 3. **Import courses** via Dataset Manager (CSV/JSON or web scraping)
 4. **Start building** your schedule with AI assistance!
 
-## 📖 How to Use
+## How to Use
 
 ### 1. Create Your Profile
 - Set major, graduation year, and current year classification
@@ -154,7 +154,7 @@ Try asking:
 - "Can you see my current schedule?"
 - "I want to balance my workload this semester"
 
-## 🔧 API Endpoints
+## API Endpoints
 
 ### AI Endpoints
 - `POST /api/ai/chat` - Chat with AI assistant
@@ -188,7 +188,7 @@ Try asking:
 - `PUT /api/users/<id>` - Update profile
 - `GET/PUT /api/users/<id>/preferences` - Manage preferences
 
-## 🤖 How the AI Works
+## How the AI Works
 
 ### Context-Aware Recommendations
 The AI considers:
@@ -214,7 +214,7 @@ GPT-4 processes your requests and:
 - **Smart Suggestions**: Considers your schedule when recommending
 - **Conversational**: Natural back-and-forth dialogue
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 schedulfy/
@@ -249,7 +249,7 @@ schedulfy/
 └── README.md
 ```
 
-## 🎯 Key Components
+## Key Components
 
 ### Backend
 - **AIRecommender**: GPT-4 integration for course recommendations
@@ -265,7 +265,7 @@ schedulfy/
 - **Dashboard**: User overview and schedule management
 - **AuthContext**: Global authentication state
 
-## 🔐 Environment Variables
+## Environment Variables
 
 Create `backend/.env`:
 ```bash
@@ -278,7 +278,7 @@ MAX_CREDITS_PER_SEMESTER=18
 CORS_ORIGINS=http://localhost:3000
 ```
 
-## 🌟 What Makes Schedulfy Different
+## What Makes Schedulfy Different
 
 1. **AI-First Design**: Built around GPT-4 from the ground up
 2. **Context Awareness**: AI knows your current schedule and constraints
@@ -287,7 +287,7 @@ CORS_ORIGINS=http://localhost:3000
 5. **Modern UX**: Beautiful, responsive design with Material-UI
 6. **Full-Stack**: Complete solution from database to AI to UI
 
-## 🤝 Contributing
+## Contributing
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
@@ -295,11 +295,11 @@ CORS_ORIGINS=http://localhost:3000
 4. Push to branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-## 📝 License
+## License
 
 This project is open source and available under the [MIT License](LICENSE).
 
-## 🎯 Future Enhancements
+## Future Enhancements
 
 - **Advanced ML Models**: Custom trained models for better predictions
 - **Multi-University Support**: Expand beyond single institution
@@ -309,15 +309,15 @@ This project is open source and available under the [MIT License](LICENSE).
 - **Professor Ratings**: Integrate RateMyProfessor data
 - **Real-time Updates**: Live course availability tracking
 
-## 📞 Support
+## Support
 
 For questions or issues:
 - Open a GitHub issue
 - Check existing documentation
-- Contact the development team
+- Contact me
 
 ---
 
-**Built with ❤️ and 🤖 AI for students who want smarter, easier course scheduling**
+**Built with AI for students who want smarter, easier course scheduling**
 
 *Powered by GPT-4 • React.js • Flask • Python • SQLite • BeautifulSoup4*
