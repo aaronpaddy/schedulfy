@@ -1,8 +1,12 @@
 import axios from 'axios';
 
+// API base URL comes from the build-time environment.
+// Set REACT_APP_API_URL to the deployed backend origin (no trailing slash).
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5003';
+
 // Create axios instance
 const api = axios.create({
-  baseURL: 'http://localhost:5003/api',
+  baseURL: `${API_BASE_URL}/api`,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -56,6 +60,10 @@ export const scheduleAPI = {
     return api.post('/schedule/generate', data);
   },
 
+  createSchedule: (data) => {
+    return api.post('/schedule', data);
+  },
+
   getSchedule: (scheduleId) => {
     return api.get(`/schedule/${scheduleId}`);
   },
@@ -79,6 +87,11 @@ export const scheduleAPI = {
 
   deleteSchedule: (scheduleId) => {
     return api.delete(`/schedule/${scheduleId}`);
+  },
+
+  getUserSchedules: () => {
+    // Backend uses session-based auth, so no userId needed
+    return api.get('/schedules');
   },
 };
 

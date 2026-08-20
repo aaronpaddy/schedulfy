@@ -1,4 +1,0 @@
-course_code,course_name,description,credits,department,prerequisites
-CS61A,Structure and Interpretation of Computer Programs,Introduction to programming and computer science,4,Computer Science,
-CS61B,Data Structures,Fundamental dynamic data structures,4,Computer Science,CS61A
-MATH1A,Calculus,"Limits, continuity, differentiation",4,Mathematics,

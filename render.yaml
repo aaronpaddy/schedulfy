@@ -1,0 +1,67 @@
+# Render Blueprint for Schedulfy
+# Deploy with: Render Dashboard -> New -> Blueprint -> pick this repo
+#
+# After the first deploy you must set the two cross-referencing URLs by hand:
+#   schedulfy-api  CORS_ORIGINS     -> https://schedulfy-web.onrender.com
+#   schedulfy-web  REACT_APP_API_URL -> https://schedulfy-api.onrender.com
+# plus your OPENAI_API_KEY on the API service.
+
+databases:
+  - name: schedulfy-db
+    databaseName: schedulfy
+    user: schedulfy
+    plan: free
+
+services:
+  # ---------- Flask API ----------
+  - type: web
+    name: schedulfy-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120
+    healthCheckPath: /api/health
+    envVars:
+      # numpy 1.26 and psycopg2-binary ship no wheels for Python 3.13,
+      # which is Render's current default. Pinning 3.11 keeps the build
+      # on prebuilt wheels instead of compiling from source.
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: DATABASE_URL
+        fromDatabase:
+          name: schedulfy-db
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: FLASK_ENV
+        value: production
+      - key: FLASK_DEBUG
+        value: "False"
+      # Set these in the dashboard - they are secret or not known until deploy.
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+
+  # ---------- React frontend ----------
+  - type: web
+    name: schedulfy-web
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: build
+    envVars:
+      - key: NODE_VERSION
+        value: "20.18.0"
+      # Render sets CI=true, which makes react-scripts treat lint warnings
+      # as build failures. Unset it so warnings stay warnings.
+      - key: CI
+        value: "false"
+      - key: REACT_APP_API_URL
+        sync: false
+    routes:
+      # React Router owns the paths; serve index.html for any non-asset URL.
+      - type: rewrite
+        source: /*
+        destination: /index.html

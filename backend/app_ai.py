@@ -22,16 +22,68 @@ from ai_service import ai_recommender, workload_predictor, course_intelligence
 # Initialize Flask app
 app = Flask(__name__)
 
+IS_PRODUCTION = os.getenv('FLASK_ENV', 'development') == 'production'
+
+
+def get_database_uri():
+    """Resolve the database URI, normalizing Postgres URLs for SQLAlchemy 2.x.
+
+    Managed Postgres providers hand out 'postgres://' URLs, a scheme SQLAlchemy
+    dropped support for, so rewrite it. Remote databases also get sslmode=require;
+    local ones are left alone because a stock local Postgres has no TLS and would
+    refuse the connection outright.
+    """
+    from urllib.parse import urlsplit
+
+    uri = os.getenv('DATABASE_URL', 'sqlite:///courses.db')
+
+    if uri.startswith('postgres://'):
+        uri = uri.replace('postgres://', 'postgresql://', 1)
+
+    if uri.startswith('postgresql://') and 'sslmode=' not in uri:
+        host = urlsplit(uri).hostname or ''
+        if host not in ('localhost', '127.0.0.1', '::1', ''):
+            uri += ('&' if '?' in uri else '?') + 'sslmode=require'
+
+    return uri
+
+
 # Configuration
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///courses.db')
+app.config['SQLALCHEMY_DATABASE_URI'] = get_database_uri()
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
-app.config['SESSION_COOKIE_SAMESITE'] = os.getenv('SESSION_COOKIE_SAMESITE', 'Lax')
-app.config['SESSION_COOKIE_SECURE'] = os.getenv('SESSION_COOKIE_SECURE', 'False') == 'True'
-app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=int(os.getenv('PERMANENT_SESSION_LIFETIME', 7)))
+
+# Recycle connections before managed Postgres closes them out from under us
+if app.config['SQLALCHEMY_DATABASE_URI'].startswith('postgresql://'):
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+        'pool_pre_ping': True,
+        'pool_recycle': 280,
+    }
+
+if IS_PRODUCTION and app.config['SECRET_KEY'] == 'dev-secret-key-change-in-production':
+    raise RuntimeError(
+        'SECRET_KEY must be set in production. Without it, every restart '
+        'invalidates all user sessions.'
+    )
+
+# Session configuration
+# The frontend is served from a different domain than the API, so the session
+# cookie is cross-site: browsers only send it when SameSite=None AND Secure.
+app.config['SESSION_COOKIE_SAMESITE'] = 'None' if IS_PRODUCTION else 'Lax'
+app.config['SESSION_COOKIE_SECURE'] = IS_PRODUCTION
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_NAME'] = 'schedulfy_session'
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
 
 # CORS
-CORS(app, supports_credentials=True, origins=os.getenv('CORS_ORIGINS', 'http://localhost:3000').split(','))
+# Credentialed requests cannot use a wildcard origin, so list frontend origins
+# explicitly via CORS_ORIGINS (comma-separated).
+CORS_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv('CORS_ORIGINS', 'http://localhost:3000').split(',')
+    if origin.strip()
+]
+CORS(app, supports_credentials=True, origins=CORS_ORIGINS)
 
 # Initialize database
 db.init_app(app)
@@ -309,13 +361,14 @@ def get_ai_recommendations():
         courses_data = [course.to_dict() for course in available_courses]
         
         # Get AI recommendations
-        recommendations = ai_recommender.get_course_recommendations(
+        ai_response = ai_recommender.get_course_recommendations(
             student_profile,
             courses_data,
             num_recommendations=data.get('num_recommendations', 8)
         )
         
-        return jsonify(recommendations), 200
+        # Return the AI response directly (it already has success and recommendations fields)
+        return jsonify(ai_response), 200
         
     except Exception as e:
         return jsonify({
@@ -1314,6 +1367,81 @@ def get_user_schedules():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/schedule', methods=['POST'])
+@login_required
+def create_schedule():
+    """Create a new schedule"""
+    try:
+        user = get_current_user()
+        data = request.get_json()
+        
+        name = data.get('name', 'New Schedule')
+        semester = data.get('semester', 'Fall')
+        year = data.get('year', 2025)
+        course_ids = data.get('course_ids', [])
+        max_credits = data.get('max_credits', 18)
+        
+        # Get the courses
+        courses = Course.query.filter(Course.id.in_(course_ids)).all()
+        
+        # Calculate total credits
+        total_credits = sum(c.credits for c in courses)
+        
+        # Get user's max credits preference
+        preferences = json.loads(user.preferences) if user.preferences else {}
+        user_max_credits = preferences.get('max_credits_per_semester', 18)
+        
+        # Check credit limit
+        if total_credits > user_max_credits:
+            return jsonify({
+                'error': f'Total credits ({total_credits}) exceeds your maximum ({user_max_credits} credits)',
+                'total_credits': total_credits,
+                'max_credits': user_max_credits,
+                'can_force': True
+            }), 400
+        
+        # Check for time conflicts
+        conflicts = []
+        for i, course1 in enumerate(courses):
+            for course2 in courses[i+1:]:
+                if has_time_conflict(course1, course2):
+                    conflicts.append({
+                        'course1': f"{course1.code} {course1.name}",
+                        'course2': f"{course2.code} {course2.name}"
+                    })
+        
+        if conflicts:
+            return jsonify({
+                'error': 'Schedule has time conflicts',
+                'conflicts': conflicts
+            }), 400
+        
+        # Create the schedule
+        schedule = Schedule(
+            user_id=user.id,
+            name=name,
+            semester=semester,
+            year=year,
+            total_credits=total_credits
+        )
+        
+        # Add courses to schedule
+        for course in courses:
+            schedule.courses.append(course)
+        
+        db.session.add(schedule)
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'Schedule created successfully',
+            'schedule': schedule.to_dict()
+        }), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/schedule/<int:schedule_id>', methods=['GET', 'PUT', 'DELETE'])
 @login_required
 def manage_schedule(schedule_id):
@@ -1511,6 +1639,6 @@ if __name__ == '__main__':
     app.run(
         debug=os.getenv('FLASK_DEBUG', 'True') == 'True',
         host='0.0.0.0',
-        port=5003
+        port=int(os.getenv('PORT', 5003))
     )
 

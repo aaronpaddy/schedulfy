@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Box,
   Paper,
@@ -15,7 +16,6 @@ import {
   Accordion,
   AccordionSummary,
   AccordionDetails,
-  Rating
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
@@ -29,62 +29,58 @@ import api from '../services/api';
  * AI-Powered Course Recommendations
  * Shows personalized course suggestions with reasoning and career alignment
  */
-function AIRecommendations({ onCourseAdd, targetCredits = 15, semester = 'Fall', year = 2025, scheduleId = null, isAddingToSchedule = false }) {
+function AIRecommendations({ onCourseAdd, targetCredits = 15, semester = 'Fall', year = 2025, scheduleId = null, isAddingToSchedule = false, currentSchedule = [], maxCredits = 18, allCourses = [] }) {
+  const navigate = useNavigate();
   const [recommendations, setRecommendations] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [scheduleContext, setScheduleContext] = useState(null);
 
-  useEffect(() => {
-    fetchRecommendations();
-  }, [semester, year, scheduleId]);
-
-  const fetchRecommendations = async () => {
+  const fetchRecommendations = useCallback(async () => {
     setLoading(true);
     setError(null);
 
     try {
       let response;
       
-      // Use context-aware endpoint if adding to existing schedule
-      if (scheduleId && isAddingToSchedule) {
-        response = await api.post(`/ai/suggest-for-schedule/${scheduleId}`, {
-          num_suggestions: 8
-        });
-        
-        if (response.data.success) {
-          setRecommendations(response.data.recommendations || []);
-          setScheduleContext({
-            currentCredits: response.data.current_credits,
-            maxCredits: response.data.max_credits,
-            remainingCredits: response.data.remaining_credits,
-            scheduleName: response.data.schedule_name,
-            context: response.data.context
-          });
-        } else {
-          throw new Error('Failed to get schedule-specific recommendations');
-        }
-      } else {
-        // Regular recommendations
-        response = await api.post('/ai/recommendations', {
-          target_credits: targetCredits,
-          semester,
-          year
-        });
+      // Always use regular recommendations endpoint for consistency
+      response = await api.post('/ai/recommendations', {
+        target_credits: targetCredits,
+        semester,
+        year
+      });
 
-        if (response.data.success) {
-          setRecommendations(response.data.recommendations || []);
-        } else {
-          throw new Error('Failed to get recommendations');
-        }
+      if (response.data.success) {
+        const recs = response.data.recommendations || [];
+        setRecommendations(Array.isArray(recs) ? recs : []);
+      } else {
+        throw new Error('Failed to get recommendations');
       }
     } catch (err) {
       console.error('Recommendation error:', err);
-      setError('Unable to get AI recommendations. Make sure OpenAI API key is configured.');
+      
+      // Provide more specific error messages
+      if (err.response?.status === 401) {
+        setError('Please log in to get AI recommendations.');
+      } else if (err.response?.status === 429) {
+        setError('OpenAI API quota exceeded. Please check your billing or try again later.');
+      } else if (err.response?.status === 500) {
+        setError('AI service is temporarily unavailable. Please try again later.');
+      } else if (err.message?.includes('Network Error') || !err.response) {
+        setError('Unable to connect to the server. Please check your connection.');
+      } else {
+        setError('Unable to get AI recommendations. Please try again.');
+      }
+      
+      setRecommendations([]); // Ensure recommendations is always an array
     } finally {
       setLoading(false);
     }
-  };
+  }, [scheduleId, isAddingToSchedule, semester, year]);
+
+  useEffect(() => {
+    fetchRecommendations();
+  }, [fetchRecommendations]);
 
   const getDifficultyColor = (difficulty) => {
     if (difficulty <= 2) return 'success';
@@ -100,6 +96,33 @@ function AIRecommendations({ onCourseAdd, targetCredits = 15, semester = 'Fall',
       case 'low': return 'info';
       default: return 'default';
     }
+  };
+
+  const canAddCourse = (courseCode) => {
+    // Find the course in all courses to get its details
+    const course = recommendations.find(r => r.course_code === courseCode);
+    if (!course) return { canAdd: false, reason: 'Course not found' };
+
+    // Check if already in schedule
+    const alreadySelected = currentSchedule.some(c => c.code === courseCode);
+    if (alreadySelected) return { canAdd: false, reason: 'Already in schedule' };
+
+    // Get actual course credits from the course database
+    const actualCourse = allCourses.find(c => c.code === courseCode);
+    const courseCredits = actualCourse ? actualCourse.credits : 3; // Default to 3 if not found
+
+    // Check credit limit
+    const currentCredits = currentSchedule.reduce((sum, c) => sum + (c.credits || 0), 0);
+    const newTotal = currentCredits + courseCredits;
+    
+    if (newTotal > maxCredits) {
+      return { 
+        canAdd: false, 
+        reason: `Would exceed credit limit (${newTotal}/${maxCredits})` 
+      };
+    }
+
+    return { canAdd: true, reason: '' };
   };
 
   if (loading) {
@@ -123,23 +146,63 @@ function AIRecommendations({ onCourseAdd, targetCredits = 15, semester = 'Fall',
     return (
       <Alert severity="warning">
         {error}
-        <Button size="small" onClick={fetchRecommendations} sx={{ mt: 1 }}>
-          Retry
-        </Button>
+        <Box sx={{ mt: 2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+          <Button size="small" onClick={fetchRecommendations}>
+            Retry
+          </Button>
+          {error.includes('log in') && (
+            <Button 
+              size="small" 
+              variant="contained" 
+              onClick={() => navigate('/login')}
+            >
+              Login
+            </Button>
+          )}
+        </Box>
       </Alert>
     );
   }
 
   if (recommendations.length === 0) {
     return (
-      <Paper sx={{ p: 3, textAlign: 'center' }}>
+      <Paper sx={{ p: 4, textAlign: 'center' }}>
         <AutoAwesomeIcon sx={{ fontSize: 60, color: 'text.secondary', mb: 2 }} />
         <Typography variant="h6" gutterBottom>
-          No recommendations yet
+          No recommendations available
         </Typography>
-        <Typography color="text.secondary">
-          Complete your profile to get personalized course recommendations
+        <Typography color="text.secondary" sx={{ mb: 3, maxWidth: '500px', mx: 'auto' }}>
+          AI recommendations are currently unavailable. This could be due to:
         </Typography>
+        
+        <Box sx={{ textAlign: 'left', maxWidth: '400px', mx: 'auto', mb: 3 }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            • Incomplete user profile (major, graduation year, etc.)
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            • AI service configuration needed
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            • No course data available in the system
+          </Typography>
+        </Box>
+
+        <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center', flexWrap: 'wrap' }}>
+          <Button 
+            variant="outlined" 
+            onClick={fetchRecommendations}
+            startIcon={<AutoAwesomeIcon />}
+          >
+            Try Again
+          </Button>
+          <Button 
+            variant="contained" 
+            onClick={() => navigate('/profile')}
+            startIcon={<SchoolIcon />}
+          >
+            Complete Profile
+          </Button>
+        </Box>
       </Paper>
     );
   }
@@ -178,7 +241,7 @@ function AIRecommendations({ onCourseAdd, targetCredits = 15, semester = 'Fall',
       )}
 
       <Grid container spacing={2}>
-        {recommendations.map((rec, index) => (
+        {(recommendations || []).map((rec, index) => (
           <Grid item xs={12} md={6} key={index}>
             <Card 
               elevation={3}
@@ -279,14 +342,22 @@ function AIRecommendations({ onCourseAdd, targetCredits = 15, semester = 'Fall',
               </CardContent>
 
               <CardActions sx={{ p: 2, pt: 0 }}>
-                <Button 
-                  variant="contained" 
-                  fullWidth
-                  startIcon={<AddIcon />}
-                  onClick={() => onCourseAdd && onCourseAdd(rec.course_code)}
-                >
-                  Add to Schedule
-                </Button>
+                {(() => {
+                  const { canAdd, reason } = canAddCourse(rec.course_code);
+                  return (
+                    <Button 
+                      variant={canAdd ? "contained" : "outlined"}
+                      color={canAdd ? "primary" : "warning"}
+                      fullWidth
+                      startIcon={<AddIcon />}
+                      onClick={() => onCourseAdd && onCourseAdd(rec.course_code)}
+                      disabled={!canAdd}
+                      title={!canAdd ? reason : ''}
+                    >
+                      {canAdd ? 'Add to Schedule' : reason}
+                    </Button>
+                  );
+                })()}
               </CardActions>
             </Card>
           </Grid>

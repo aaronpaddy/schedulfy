@@ -73,7 +73,7 @@ For each recommended course, provide:
 - Reasoning (2-3 sentences explaining why this course is ideal)
 - Career relevance (how it helps achieve their career goal)
 - Difficulty level (1-5 scale)
-- Estimated workload (hours per week)
+- Estimated workload (hours per week - this is different from credits)
 - Prerequisites status (met/not met)
 
 Format your response as a JSON array of objects with these fields:

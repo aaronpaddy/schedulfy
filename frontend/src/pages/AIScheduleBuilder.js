@@ -24,6 +24,7 @@ import BarChartIcon from '@mui/icons-material/BarChart';
 import SchoolIcon from '@mui/icons-material/School';
 import SaveIcon from '@mui/icons-material/Save';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import AddIcon from '@mui/icons-material/Add';
 
 // Import AI components
 import AIChatBot from '../components/AIChatBot';
@@ -51,14 +52,19 @@ function AIScheduleBuilder() {
   const [maxCredits, setMaxCredits] = useState(18);
   const [existingSchedule, setExistingSchedule] = useState(null);
   const [isAddingToSchedule, setIsAddingToSchedule] = useState(false);
+  const [userSchedules, setUserSchedules] = useState([]);
+  const [showSchedulePicker, setShowSchedulePicker] = useState(false);
 
   useEffect(() => {
     fetchCourses();
-    fetchUserPreferences();
+    if (user?.id) {
+      fetchUserPreferences();
+      fetchUserSchedules();
+    }
     if (scheduleId) {
       fetchExistingSchedule(scheduleId);
     }
-  }, [scheduleId]);
+  }, [scheduleId, user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchCourses = async () => {
     try {
@@ -71,18 +77,66 @@ function AIScheduleBuilder() {
 
   const fetchUserPreferences = async () => {
     try {
-      // Try to get from localStorage first
       const userId = user?.id;
-      if (userId) {
-        const storedPrefs = localStorage.getItem(`user_preferences_${userId}`);
-        if (storedPrefs) {
-          const prefs = JSON.parse(storedPrefs);
-          setMaxCredits(prefs.max_credits_per_semester || 18);
+      if (!userId) return;
+
+      // Try to get from backend first
+      try {
+        const response = await api.get(`/users/${userId}/preferences`);
+        if (response.data && response.data.preferences) {
+          const maxCreds = response.data.preferences.max_credits_per_semester || 18;
+          setMaxCredits(maxCreds);
+          // Save to localStorage for future
+          localStorage.setItem(`user_preferences_${userId}`, JSON.stringify(response.data.preferences));
+          return;
         }
+      } catch (backendError) {
+        console.log('Backend preferences not available, trying localStorage');
+      }
+
+      // Fallback to localStorage
+      const storedPrefs = localStorage.getItem(`user_preferences_${userId}`);
+      if (storedPrefs) {
+        const prefs = JSON.parse(storedPrefs);
+        setMaxCredits(prefs.max_credits_per_semester || 18);
       }
     } catch (error) {
       console.error('Error fetching user preferences:', error);
+      setMaxCredits(18); // Default fallback
     }
+  };
+
+  const fetchUserSchedules = async () => {
+    try {
+      const response = await scheduleAPI.getUserSchedules();
+      const schedules = response.data.schedules || response.data || [];
+      console.log('📅 Fetched schedules:', schedules);
+      console.log('📋 Schedule count:', schedules.length);
+      console.log('🔍 scheduleId from URL:', scheduleId);
+      setUserSchedules(schedules);
+      
+      // If user has schedules and not editing a specific one, show picker
+      if (schedules.length > 0 && !scheduleId) {
+        console.log('✅ Should show schedule picker!');
+        setShowSchedulePicker(true);
+      } else {
+        console.log('❌ Not showing picker. Schedules:', schedules.length, 'scheduleId:', scheduleId);
+      }
+    } catch (error) {
+      console.error('Error fetching user schedules:', error);
+    }
+  };
+
+  const loadExistingScheduleById = async (id) => {
+    setShowSchedulePicker(false);
+    await fetchExistingSchedule(id);
+  };
+
+  const startNewSchedule = () => {
+    setShowSchedulePicker(false);
+    setExistingSchedule(null);
+    setSelectedCourses([]);
+    setIsAddingToSchedule(false);
   };
 
   const fetchExistingSchedule = async (id) => {
@@ -102,9 +156,98 @@ function AIScheduleBuilder() {
   const handleAddCourse = (courseCode) => {
     // Find course by code
     const course = allCourses.find(c => c.code === courseCode);
-    if (course && !selectedCourses.find(c => c.id === course.id)) {
-      setSelectedCourses([...selectedCourses, course]);
+    if (!course) {
+      alert('Course not found!');
+      return;
     }
+
+    // Check if course is already selected
+    if (selectedCourses.find(c => c.id === course.id)) {
+      alert('This course is already in your schedule!');
+      return;
+    }
+
+    // Check credit limit
+    const currentCredits = selectedCourses.reduce((sum, c) => sum + c.credits, 0);
+    const newTotalCredits = currentCredits + course.credits;
+    
+    if (newTotalCredits > maxCredits) {
+      const shouldAdd = window.confirm(
+        `⚠️ Credit Limit Warning!\n\n` +
+        `Adding ${course.code} would exceed your credit limit:\n` +
+        `Current: ${currentCredits} credits\n` +
+        `Adding: ${course.credits} credits\n` +
+        `New total: ${newTotalCredits} credits\n` +
+        `Your limit: ${maxCredits} credits\n\n` +
+        `This exceeds your limit by ${newTotalCredits - maxCredits} credits.\n\n` +
+        `Do you want to add this course anyway?`
+      );
+      
+      if (!shouldAdd) {
+        return;
+      }
+    }
+
+    // Check for time conflicts
+    const hasConflict = checkTimeConflict(course, selectedCourses);
+    if (hasConflict) {
+      const shouldAdd = window.confirm(
+        `⚠️ Time Conflict Warning!\n\n` +
+        `${course.code} conflicts with an existing course in your schedule.\n\n` +
+        `Do you want to add this course anyway?`
+      );
+      
+      if (!shouldAdd) {
+        return;
+      }
+    }
+
+    // Add the course
+    setSelectedCourses([...selectedCourses, course]);
+  };
+
+  const checkTimeConflict = (newCourse, existingCourses) => {
+    if (!newCourse.time_slots || newCourse.time_slots.length === 0) {
+      return false; // No time info, assume no conflict
+    }
+
+    for (const existingCourse of existingCourses) {
+      if (!existingCourse.time_slots || existingCourse.time_slots.length === 0) {
+        continue; // No time info, skip
+      }
+
+      // Check each time slot of the new course against each time slot of existing courses
+      for (const newSlot of newCourse.time_slots) {
+        for (const existingSlot of existingCourse.time_slots) {
+          if (newSlot.day === existingSlot.day) {
+            // Same day, check time overlap
+            const newStart = timeToMinutes(newSlot.start_time);
+            const newEnd = timeToMinutes(newSlot.end_time);
+            const existingStart = timeToMinutes(existingSlot.start_time);
+            const existingEnd = timeToMinutes(existingSlot.end_time);
+
+            // Check for overlap
+            if ((newStart < existingEnd) && (newEnd > existingStart)) {
+              return true; // Conflict found
+            }
+          }
+        }
+      }
+    }
+    return false;
+  };
+
+  const timeToMinutes = (timeStr) => {
+    if (!timeStr) return 0;
+    const [time, period] = timeStr.split(' ');
+    const [hours, minutes] = time.split(':').map(Number);
+    let totalMinutes = hours * 60 + minutes;
+    if (period === 'PM' && hours !== 12) {
+      totalMinutes += 12 * 60;
+    } else if (period === 'AM' && hours === 12) {
+      totalMinutes -= 12 * 60;
+    }
+    return totalMinutes;
   };
 
   const handleRemoveCourse = (courseId) => {
@@ -151,9 +294,27 @@ function AIScheduleBuilder() {
         setLoading(false);
       }
     } else {
-      // New schedule - just close dialog
-      setSaveDialogOpen(false);
-      alert('Schedule saved successfully! Go to Dashboard to view all your saved schedules.');
+      // Create new schedule
+      try {
+        setLoading(true);
+        const courseIds = selectedCourses.map(c => c.id);
+        const response = await scheduleAPI.createSchedule({
+          name: `Fall 2025 Schedule`,
+          semester: 'Fall',
+          year: 2025,
+          course_ids: courseIds,
+          max_credits: maxCredits
+        });
+        
+        setSaveDialogOpen(false);
+        alert('Schedule saved successfully!');
+        navigate(`/schedule/${response.data.schedule.id}`);
+      } catch (error) {
+        console.error('Error creating schedule:', error);
+        alert(error.response?.data?.error || 'Failed to save schedule. Please try again.');
+      } finally {
+        setLoading(false);
+      }
     }
   };
 
@@ -164,28 +325,127 @@ function AIScheduleBuilder() {
     <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
       {/* Header */}
       <Box sx={{ mb: 4 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-          {existingSchedule && (
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            {existingSchedule && (
+              <Button
+                startIcon={<ArrowBackIcon />}
+                onClick={() => navigate(`/schedule/${existingSchedule.id}`)}
+                sx={{ mr: 2 }}
+              >
+                Back to Schedule
+              </Button>
+            )}
+            <AutoAwesomeIcon sx={{ fontSize: 40 }} color="primary" />
+            <Box>
+              <Typography variant="h3" component="h1">
+                {existingSchedule ? 'AI Course Suggestions' : 'AI Schedule Builder'}
+              </Typography>
+              <Typography variant="h6" color="text.secondary">
+                {existingSchedule 
+                  ? `Get AI-powered course suggestions for ${existingSchedule.name}`
+                  : 'Build your perfect schedule with AI-powered recommendations, workload predictions, and natural language chat'
+                }
+              </Typography>
+            </Box>
+          </Box>
+          
+          {/* Save Schedule Button */}
+          {selectedCourses.length > 0 && !existingSchedule && (
             <Button
-              startIcon={<ArrowBackIcon />}
-              onClick={() => navigate(`/schedule/${existingSchedule.id}`)}
-              sx={{ mr: 2 }}
+              variant="contained"
+              startIcon={<SaveIcon />}
+              onClick={() => setSaveDialogOpen(true)}
+              sx={{
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                color: 'white',
+                px: 3,
+                py: 1.5,
+                borderRadius: 2,
+                fontWeight: 600,
+                textTransform: 'none',
+                boxShadow: '0 4px 15px rgba(102, 126, 234, 0.3)',
+                '&:hover': {
+                  background: 'linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%)',
+                  boxShadow: '0 6px 20px rgba(102, 126, 234, 0.4)',
+                  transform: 'translateY(-1px)',
+                },
+                transition: 'all 0.2s ease',
+              }}
             >
-              Back to Schedule
+              Save Schedule ({totalCredits} credits)
             </Button>
           )}
-          <AutoAwesomeIcon sx={{ fontSize: 40 }} color="primary" />
-          <Typography variant="h3" component="h1">
-            {existingSchedule ? 'AI Course Suggestions' : 'AI Schedule Builder'}
-          </Typography>
         </Box>
-        <Typography variant="h6" color="text.secondary">
-          {existingSchedule 
-            ? `Get AI-powered course suggestions for ${existingSchedule.name}`
-            : 'Build your perfect schedule with AI-powered recommendations, workload predictions, and natural language chat'
-          }
-        </Typography>
       </Box>
+
+      {/* Schedule Picker Dialog */}
+      <Dialog 
+        open={showSchedulePicker} 
+        onClose={() => setShowSchedulePicker(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>
+          Choose an Option
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body1" sx={{ mb: 3 }}>
+            You have {userSchedules.length} existing schedule{userSchedules.length !== 1 ? 's' : ''}. 
+            Would you like to continue working on one or create a new schedule?
+          </Typography>
+
+          <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 600 }}>
+            Your Schedules:
+          </Typography>
+
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mb: 3 }}>
+            {userSchedules.map((schedule) => {
+              const totalCredits = schedule.courses?.reduce((sum, c) => sum + (c.credits || 0), 0) || 0;
+              return (
+                <Card 
+                  key={schedule.id}
+                  sx={{ 
+                    cursor: 'pointer',
+                    border: '2px solid transparent',
+                    '&:hover': {
+                      borderColor: 'primary.main',
+                      boxShadow: 2,
+                    }
+                  }}
+                  onClick={() => loadExistingScheduleById(schedule.id)}
+                >
+                  <CardContent>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Box>
+                        <Typography variant="h6">{schedule.name}</Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          {schedule.courses?.length || 0} courses • {totalCredits} credits
+                        </Typography>
+                      </Box>
+                      <Chip 
+                        label="Continue" 
+                        color="primary" 
+                        icon={<ArrowBackIcon />}
+                      />
+                    </Box>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </Box>
+
+          <Button
+            fullWidth
+            variant="outlined"
+            size="large"
+            startIcon={<AddIcon />}
+            onClick={startNewSchedule}
+          >
+            Start a Brand New Schedule
+          </Button>
+        </DialogContent>
+      </Dialog>
 
       {/* Info Banner */}
       {existingSchedule ? (
@@ -199,8 +459,11 @@ function AIScheduleBuilder() {
         </Alert>
       ) : (
         <Alert severity="info" sx={{ mb: 3 }} icon={<AutoAwesomeIcon />}>
-          <strong>New!</strong> This AI-powered system uses GPT-4 to understand your goals and recommend optimal courses. 
-          Try the chat interface or browse AI recommendations below.
+          <strong>Building a New Schedule!</strong> Start from scratch with AI-powered recommendations. Your max credits per semester: <strong>{maxCredits} credits</strong>.
+          <br />
+          <Typography variant="body2" sx={{ mt: 1 }}>
+            Use the chat or browse recommendations below to add courses, then save your schedule!
+          </Typography>
         </Alert>
       )}
 
@@ -342,6 +605,9 @@ function AIScheduleBuilder() {
                 targetCredits={maxCredits - totalCredits}
                 scheduleId={existingSchedule?.id}
                 isAddingToSchedule={isAddingToSchedule}
+                currentSchedule={selectedCourses}
+                maxCredits={maxCredits}
+                allCourses={allCourses}
               />
             )}
             
