@@ -23,7 +23,9 @@ class AIRecommendationEngine:
     """
     
     def __init__(self):
-        self.model = "gpt-4"
+        # gpt-4o replaces the original gpt-4: cheaper, faster, and multimodal.
+        # Override OPENAI_MODEL to move to a newer model without a code change.
+        self.model = os.getenv('OPENAI_MODEL', 'gpt-4o')
         self.max_tokens = 2000
     
     def get_course_recommendations(
@@ -617,9 +619,12 @@ class CurriculumExtractor:
     """
 
     def __init__(self):
-        # Reading an image needs a vision-capable model; the plain gpt-4 used
-        # elsewhere in this file cannot accept image input.
-        self.model = os.getenv('OPENAI_VISION_MODEL', 'gpt-4o')
+        # Reading a screenshot needs a vision-capable model. This follows
+        # OPENAI_MODEL by default so there is one model to configure, with
+        # OPENAI_VISION_MODEL available if the two need to differ.
+        self.model = os.getenv(
+            'OPENAI_VISION_MODEL', os.getenv('OPENAI_MODEL', 'gpt-4o')
+        )
         self.max_tokens = 4000
 
     INSTRUCTIONS = """You extract degree requirements from a university curriculum sheet.
