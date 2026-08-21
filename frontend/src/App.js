@@ -221,6 +221,8 @@ const PublicRoute = ({ children }) => {
 };
 
 function AppContent() {
+  const { authenticated } = useAuth();
+
   return (
     <div className="App" style={{ backgroundColor: '#f8f9fa', minHeight: '100vh' }}>
       <Navbar />
@@ -319,6 +321,10 @@ function AppContent() {
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
       </div>
+
+      {/* The advisor follows the student around, rather than living on a page
+          they have to navigate to. Hidden while signed out. */}
+      {authenticated && <FloatingChatBot />}
     </div>
   );
 }
