@@ -1653,6 +1653,8 @@ def generate_schedule():
                 # Tell the student which courses were withheld and why.
                 if blocked_by_prereqs:
                     response_data['blocked_by_prerequisites'] = blocked_by_prereqs
+                if unscheduled_requirements:
+                    response_data['unscheduled_requirements'] = unscheduled_requirements
                 
                 return jsonify(response_data), 200
         

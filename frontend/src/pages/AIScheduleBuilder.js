@@ -674,6 +674,41 @@ function AIScheduleBuilder() {
             </Alert>
           )}
 
+          {scheduleData?.blocked_by_prerequisites &&
+            scheduleData.blocked_by_prerequisites.length > 0 && (
+              <Alert severity="warning" sx={{ mb: 2 }}>
+                <Typography variant="subtitle2" gutterBottom>
+                  Held back until prerequisites are met:{' '}
+                  {scheduleData.blocked_by_prerequisites.length}
+                </Typography>
+                {scheduleData.blocked_by_prerequisites.map((item, idx) => (
+                  <Typography key={idx} variant="body2" sx={{ ml: 2, mt: 0.5 }}>
+                    • <strong>{item.code}</strong> needs{' '}
+                    {(item.missing_prerequisites || []).join(', ')}
+                  </Typography>
+                ))}
+                <Typography variant="body2" sx={{ mt: 1 }}>
+                  Mark these as completed on your degree plan if you have already taken them.
+                </Typography>
+              </Alert>
+            )}
+
+          {scheduleData?.unscheduled_requirements &&
+            scheduleData.unscheduled_requirements.length > 0 && (
+              <Alert severity="info" sx={{ mb: 2 }}>
+                <Typography variant="subtitle2" gutterBottom>
+                  Still required, but not schedulable yet:{' '}
+                  {scheduleData.unscheduled_requirements.length}
+                </Typography>
+                {scheduleData.unscheduled_requirements.map((item, idx) => (
+                  <Typography key={idx} variant="body2" sx={{ ml: 2, mt: 0.5 }}>
+                    • <strong>{item.code}</strong>
+                    {item.title ? ` - ${item.title}` : ''} ({item.reason})
+                  </Typography>
+                ))}
+              </Alert>
+            )}
+
           {scheduleData?.ai_recommendations && scheduleData.ai_recommendations.length > 0 && (
             <Box>
               <Typography variant="subtitle2" gutterBottom>
