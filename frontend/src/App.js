@@ -9,6 +9,7 @@ import CourseCatalog from './pages/CourseCatalog';
 import ScheduleViewer from './pages/ScheduleViewer';
 import UserProfile from './pages/UserProfile';
 import CourseDatasetManager from './pages/CourseDatasetManager';
+import DegreePlan from './pages/DegreePlan';
 import AIScheduleBuilder from './pages/AIScheduleBuilder';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
@@ -296,6 +297,15 @@ function AppContent() {
             element={
               <ProtectedRoute>
                 <CourseDatasetManager />
+              </ProtectedRoute>
+            } 
+          />
+
+          <Route 
+            path="/degree-plan" 
+            element={
+              <ProtectedRoute>
+                <DegreePlan />
               </ProtectedRoute>
             } 
           />

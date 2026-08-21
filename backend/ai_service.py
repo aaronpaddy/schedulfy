@@ -608,8 +608,103 @@ class CourseIntelligence:
             return []
 
 
+class CurriculumExtractor:
+    """Turn an uploaded degree plan into structured curriculum rows.
+
+    Output is always a DRAFT. Degree sheets photograph badly, merge columns and
+    footnote their alternatives, so extraction is presented to the student for
+    correction and never saved directly.
+    """
+
+    def __init__(self):
+        # Reading an image needs a vision-capable model; the plain gpt-4 used
+        # elsewhere in this file cannot accept image input.
+        self.model = os.getenv('OPENAI_VISION_MODEL', 'gpt-4o')
+        self.max_tokens = 4000
+
+    INSTRUCTIONS = """You extract degree requirements from a university curriculum sheet.
+
+Return ONLY a JSON array. One object per course, with these fields:
+  course_code      e.g. "CS225". Use the code exactly as printed.
+  title            the course name as printed, or null
+  credits          number, or null if not shown
+  category         one of "core", "elective", "gen-ed", "other" - your best read
+  offered_terms    array like ["Fall"] or ["Fall","Spring"], [] if not stated
+  suggested_year   1-4 if the sheet places it in a year, else null
+  suggested_term   "Fall"/"Spring"/"Summer" if placed, else null
+  prerequisites    array of course codes if stated, else []
+  notes            anything ambiguous a student should check, else null
+
+Rules:
+- Transcribe only what the document shows. Never invent a course, a code or a
+  credit value. If a field is not shown, use null or [].
+- A placeholder like "Technical Elective" or "Humanities I" IS a requirement.
+  Keep it, set course_code to the label as printed, and category "elective"
+  or "gen-ed".
+- When a requirement offers alternatives ("CS210 or CS220"), emit the first
+  and record the alternatives in notes.
+- Do not include totals, GPA rules, headings or footnotes as courses.
+- Return [] if the document contains no course requirements."""
+
+    def extract(self, text: Optional[str] = None, images: Optional[List[str]] = None):
+        """Extract rows from document text and/or base64 data-URL images."""
+        images = images or []
+        if not text and not images:
+            return {'success': False, 'error': 'No curriculum content provided', 'courses': []}
+
+        content = [{'type': 'text', 'text': self.INSTRUCTIONS}]
+        if text:
+            content.append({
+                'type': 'text',
+                'text': f"Curriculum document text:\n\n{text[:20000]}",
+            })
+        for image in images:
+            content.append({'type': 'image_url', 'image_url': {'url': image}})
+
+        try:
+            response = client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {'role': 'system', 'content': 'You transcribe academic documents into structured JSON. You never invent data.'},
+                    {'role': 'user', 'content': content},
+                ],
+                temperature=0,
+                max_tokens=self.max_tokens,
+            )
+            raw = response.choices[0].message.content
+            courses = self._parse_array(raw)
+            return {
+                'success': True,
+                'courses': courses,
+                'count': len(courses),
+                'model': self.model,
+            }
+        except Exception as e:
+            return {'success': False, 'error': str(e), 'courses': []}
+
+    @staticmethod
+    def _parse_array(raw: str):
+        """Pull a JSON array out of the reply, tolerating code fences."""
+        if not raw:
+            return []
+        text = raw.strip()
+        if text.startswith('```'):
+            text = text.split('```')[1]
+            if text.startswith('json'):
+                text = text[4:]
+        start, end = text.find('['), text.rfind(']')
+        if start == -1 or end == -1:
+            return []
+        try:
+            parsed = json.loads(text[start:end + 1])
+        except (ValueError, TypeError):
+            return []
+        return [c for c in parsed if isinstance(c, dict) and c.get('course_code')]
+
+
 # Global instances
 ai_recommender = AIRecommendationEngine()
 workload_predictor = WorkloadPredictor()
 course_intelligence = CourseIntelligence()
+curriculum_extractor = CurriculumExtractor()
 

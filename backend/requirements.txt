@@ -19,3 +19,6 @@ joblib==1.4.2
 # Production server & database driver
 gunicorn==23.0.0
 psycopg2-binary==2.9.10
+
+# Curriculum document parsing
+pypdf==5.1.0

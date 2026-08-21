@@ -104,6 +104,28 @@ export const scheduleAPI = {
   },
 };
 
+export const curriculumAPI = {
+  // Parse uploaded degree-plan documents into draft rows. Nothing is saved
+  // until the student confirms them.
+  extract: (files, text) => {
+    const formData = new FormData();
+    (files || []).forEach((file) => formData.append('files', file));
+    if (text) formData.append('text', text);
+    return api.post('/curriculum/extract', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+
+  get: () => api.get('/curriculum'),
+
+  save: (curriculum, replace = false) =>
+    api.post('/curriculum', { curriculum, replace }),
+
+  updateEntry: (entryId, changes) => api.put(`/curriculum/${entryId}`, changes),
+
+  deleteEntry: (entryId) => api.delete(`/curriculum/${entryId}`),
+};
+
 export const userAPI = {
   createUser: (userData) => {
     return api.post('/users', userData);

@@ -6,6 +6,8 @@ Enhanced Flask backend with GPT-4 recommendations, workload prediction, and chat
 from flask import Flask, request, jsonify, session
 from flask_cors import CORS
 from datetime import datetime, timedelta
+import base64
+import io
 import json
 import os
 from dotenv import load_dotenv
@@ -14,10 +16,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Import models
-from models import db, User, Course, Schedule, ScheduleCourses, ChatHistory
+from models import db, User, Course, Schedule, ScheduleCourses, ChatHistory, CurriculumEntry
 
 # Import AI services
-from ai_service import ai_recommender, workload_predictor, course_intelligence
+from ai_service import ai_recommender, workload_predictor, course_intelligence, curriculum_extractor
 from course_utils import (
     canonical_code,
     normalize_days,
@@ -159,6 +161,30 @@ def admin_required(f):
     return decorated_function
 
 
+def completed_course_codes(user):
+    """Course codes the student has satisfied.
+
+    The curriculum is the source of truth once uploaded; the preferences list
+    remains the fallback for accounts that predate it.
+    """
+    from_curriculum = _curriculum_completed_codes(user.id)
+    if from_curriculum:
+        return from_curriculum
+    preferences = json.loads(user.preferences) if user.preferences else {}
+    return preferences.get('completed_courses', [])
+
+
+def curriculum_required_codes(user):
+    """Codes the student still needs, or None when no curriculum exists."""
+    rows = CurriculumEntry.query.filter(
+        CurriculumEntry.user_id == user.id,
+        ~CurriculumEntry.status.in_(CurriculumEntry.SATISFIED),
+    ).all()
+    if not rows:
+        return None
+    return {canonical_code(r.course_code) for r in rows}
+
+
 def get_current_user():
     """Get the current logged-in user"""
     if 'user_id' in session:
@@ -247,6 +273,257 @@ def has_time_conflict(course1, course2):
     except Exception as e:
         print(f"Error checking time conflict: {e}")
         return False
+
+
+# ==================== Curriculum ====================
+
+MAX_UPLOAD_BYTES = 8 * 1024 * 1024
+IMAGE_EXTENSIONS = ('.png', '.jpg', '.jpeg', '.webp', '.gif')
+
+
+def _pdf_to_text(data):
+    """Extract embedded text from a PDF, or '' when it is a scan."""
+    try:
+        from pypdf import PdfReader
+        reader = PdfReader(io.BytesIO(data))
+        return '\n'.join((page.extract_text() or '') for page in reader.pages).strip()
+    except Exception as e:
+        print(f'PDF text extraction failed: {e}')
+        return ''
+
+
+def _curriculum_completed_codes(user_id):
+    """Course codes this student has satisfied, for prerequisite checks."""
+    rows = CurriculumEntry.query.filter(
+        CurriculumEntry.user_id == user_id,
+        CurriculumEntry.status.in_(CurriculumEntry.SATISFIED),
+    ).all()
+    return [r.course_code for r in rows]
+
+
+@app.route('/api/curriculum/extract', methods=['POST'])
+@login_required
+def extract_curriculum():
+    """Parse uploaded degree-plan documents into DRAFT rows.
+
+    Nothing is saved here. The student confirms and corrects the result before
+    it becomes their curriculum.
+    """
+    try:
+        text_parts = []
+        images = []
+
+        for upload in request.files.getlist('files'):
+            if not upload.filename:
+                continue
+            data = upload.read()
+            if len(data) > MAX_UPLOAD_BYTES:
+                return jsonify({
+                    'success': False,
+                    'error': f'{upload.filename} is larger than 8MB'
+                }), 400
+
+            name = upload.filename.lower()
+            if name.endswith('.pdf'):
+                extracted = _pdf_to_text(data)
+                if extracted:
+                    text_parts.append(extracted)
+                else:
+                    # A scanned PDF has no text layer, and rasterizing it needs
+                    # poppler, which is not available here. Ask for an image.
+                    return jsonify({
+                        'success': False,
+                        'error': f'{upload.filename} has no readable text. '
+                                 'It looks like a scan - please upload a screenshot instead.'
+                    }), 400
+            elif name.endswith(IMAGE_EXTENSIONS):
+                mime = 'image/png' if name.endswith('.png') else 'image/jpeg'
+                encoded = base64.b64encode(data).decode('ascii')
+                images.append(f'data:{mime};base64,{encoded}')
+            elif name.endswith(('.txt', '.csv')):
+                text_parts.append(data.decode('utf-8', errors='replace'))
+            else:
+                return jsonify({
+                    'success': False,
+                    'error': f'Unsupported file type: {upload.filename}'
+                }), 400
+
+        pasted = (request.form.get('text') or '').strip()
+        if pasted:
+            text_parts.append(pasted)
+
+        if not text_parts and not images:
+            return jsonify({'success': False, 'error': 'No curriculum provided'}), 400
+
+        result = curriculum_extractor.extract(
+            text='\n\n'.join(text_parts) if text_parts else None,
+            images=images,
+        )
+        if not result.get('success'):
+            return jsonify(result), 502
+
+        # Flag codes the student already has, so confirming cannot silently
+        # overwrite work they have recorded.
+        existing = {
+            canonical_code(r.course_code)
+            for r in CurriculumEntry.query.filter_by(user_id=session['user_id']).all()
+        }
+        for course in result['courses']:
+            course['already_in_plan'] = canonical_code(course.get('course_code')) in existing
+
+        result['draft'] = True
+        return jsonify(result), 200
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/curriculum', methods=['GET'])
+@login_required
+def get_curriculum():
+    """The student's curriculum, with derived progress."""
+    try:
+        user = get_current_user()
+        entries = CurriculumEntry.query.filter_by(user_id=user.id).order_by(
+            CurriculumEntry.suggested_year.nulls_last()
+            if hasattr(CurriculumEntry.suggested_year, 'nulls_last')
+            else CurriculumEntry.suggested_year,
+            CurriculumEntry.course_code,
+        ).all()
+
+        completed = [e for e in entries if e.is_satisfied()]
+        credits_done = sum(e.credits or 0 for e in completed)
+        credits_total = sum(e.credits or 0 for e in entries)
+
+        return jsonify({
+            'curriculum': [e.to_dict() for e in entries],
+            'progress': {
+                'total_courses': len(entries),
+                'completed_courses': len(completed),
+                'remaining_courses': len(entries) - len(completed),
+                'credits_completed': credits_done,
+                'credits_total': credits_total,
+                'credits_remaining': max(credits_total - credits_done, 0),
+            },
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/curriculum', methods=['POST'])
+@login_required
+def save_curriculum():
+    """Save confirmed curriculum rows.
+
+    Upserts on course code so re-uploading a corrected sheet updates rows in
+    place instead of duplicating them, and never resets a recorded status.
+    """
+    try:
+        user = get_current_user()
+        data = request.get_json() or {}
+        rows = data.get('curriculum', [])
+        if not isinstance(rows, list):
+            return jsonify({'error': 'curriculum must be a list'}), 400
+
+        if data.get('replace'):
+            CurriculumEntry.query.filter_by(user_id=user.id).delete()
+            db.session.flush()
+
+        existing = {
+            canonical_code(e.course_code): e
+            for e in CurriculumEntry.query.filter_by(user_id=user.id).all()
+        }
+
+        created = updated = 0
+        for row in rows:
+            code = (row.get('course_code') or '').strip()
+            if not code:
+                continue
+
+            entry = existing.get(canonical_code(code))
+            if entry is None:
+                entry = CurriculumEntry(user_id=user.id, course_code=code)
+                db.session.add(entry)
+                existing[canonical_code(code)] = entry
+                created += 1
+            else:
+                updated += 1
+
+            entry.course_code = code
+            entry.title = row.get('title') or entry.title
+            entry.credits = as_float(row.get('credits'), entry.credits if entry.credits else 3.0)
+            entry.category = row.get('category') or entry.category
+            entry.suggested_year = as_int(row.get('suggested_year'), entry.suggested_year)
+            entry.suggested_term = row.get('suggested_term') or entry.suggested_term
+            entry.notes = row.get('notes') if row.get('notes') is not None else entry.notes
+            entry.source = row.get('source') or entry.source or 'upload'
+
+            terms = row.get('offered_terms')
+            if isinstance(terms, list):
+                entry.offered_terms = json.dumps(terms)
+
+            if 'prerequisites' in row:
+                entry.prerequisites = serialize_prerequisites(row.get('prerequisites'))
+
+            status = row.get('status')
+            if status in CurriculumEntry.STATUSES:
+                entry.status = status
+            elif not entry.status:
+                entry.status = CurriculumEntry.STATUS_NEEDED
+
+        db.session.commit()
+        return jsonify({
+            'message': f'Saved {created + updated} curriculum entries',
+            'created': created,
+            'updated': updated,
+        }), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/curriculum/<int:entry_id>', methods=['PUT', 'DELETE'])
+@login_required
+def modify_curriculum_entry(entry_id):
+    """Update one requirement - ticking it off, or correcting a field."""
+    try:
+        user = get_current_user()
+        entry = db.session.get(CurriculumEntry, entry_id)
+        if entry is None or entry.user_id != user.id:
+            return jsonify({'error': 'Curriculum entry not found'}), 404
+
+        if request.method == 'DELETE':
+            db.session.delete(entry)
+            db.session.commit()
+            return jsonify({'message': 'Entry removed'}), 200
+
+        data = request.get_json() or {}
+        if 'status' in data:
+            if data['status'] not in CurriculumEntry.STATUSES:
+                return jsonify({
+                    'error': f"status must be one of {', '.join(CurriculumEntry.STATUSES)}"
+                }), 400
+            entry.status = data['status']
+
+        for field in ('title', 'category', 'suggested_term', 'notes'):
+            if field in data:
+                setattr(entry, field, data[field])
+        if 'course_code' in data and data['course_code']:
+            entry.course_code = data['course_code'].strip()
+        if 'credits' in data:
+            entry.credits = as_float(data['credits'], entry.credits)
+        if 'suggested_year' in data:
+            entry.suggested_year = as_int(data['suggested_year'], entry.suggested_year)
+        if isinstance(data.get('offered_terms'), list):
+            entry.offered_terms = json.dumps(data['offered_terms'])
+        if 'prerequisites' in data:
+            entry.prerequisites = serialize_prerequisites(data['prerequisites'])
+
+        db.session.commit()
+        return jsonify({'message': 'Entry updated', 'entry': entry.to_dict()}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
 
 
 # ==================== Health Check ====================
@@ -390,12 +667,12 @@ def get_ai_recommendations():
         
         # Build student profile
         preferences = json.loads(user.preferences) if user.preferences else {}
-        completed_courses = preferences.get('completed_courses', [])
+        completed_courses = completed_course_codes(user)
         
         student_profile = {
             'major': user.major,
             'year': user.current_year or 'Freshman',
-            'gpa': user.gpa or 3.0,
+            'gpa': user.gpa if user.gpa is not None else 'Not provided',
             'completed_courses': completed_courses,
             'career_goal': user.career_goal or 'Not specified',
             'learning_preferences': user.learning_preferences,
@@ -628,7 +905,7 @@ def suggest_for_existing_schedule(schedule_id):
         # Get user preferences and max credits
         preferences = json.loads(user.preferences) if user.preferences else {}
         max_credits = preferences.get('max_credits_per_semester', 18)
-        completed_courses = preferences.get('completed_courses', [])
+        completed_courses = completed_course_codes(user)
         
         # Calculate remaining credits
         remaining_credits = max_credits - current_credits
@@ -663,7 +940,7 @@ def suggest_for_existing_schedule(schedule_id):
         student_profile = {
             'major': user.major,
             'year': user.current_year,
-            'gpa': user.gpa or 3.0,
+            'gpa': user.gpa if user.gpa is not None else 'Not provided',
             'completed_courses': completed_courses + current_course_codes,  # Treat current schedule as "completed"
             'career_goal': user.career_goal,
             'target_credits': remaining_credits,
@@ -1185,8 +1462,18 @@ def generate_schedule():
         
         # Get user preferences
         preferences = json.loads(user.preferences) if user.preferences else {}
-        completed_courses = preferences.get('completed_courses', [])
+        completed_courses = completed_course_codes(user)
         
+        # When the student has uploaded a curriculum, it decides what counts as
+        # a candidate; the catalog only supplies the sections and meeting times
+        # for those courses. Without one, fall back to the whole catalog.
+        required_codes = curriculum_required_codes(user)
+        if required_codes is not None:
+            available_courses = [
+                c for c in available_courses
+                if canonical_code(c.code) in required_codes
+            ]
+
         # Filter out completed courses and anything the student is not yet
         # eligible for. Without the prerequisite check a first-year student
         # was being scheduled straight into upper-level courses.
@@ -1195,6 +1482,25 @@ def generate_schedule():
             if c.code not in completed_courses and c.credits >= 1
             and not unmet_prerequisites(c.prerequisites, completed_courses)
         ]
+
+        # Requirements with no catalog entry cannot be timetabled, but the
+        # student still needs to know they are outstanding.
+        unscheduled_requirements = []
+        if required_codes is not None:
+            in_catalog = {canonical_code(c.code) for c in available_courses}
+            unscheduled_requirements = [
+                {
+                    'code': r.course_code,
+                    'title': r.title,
+                    'credits': r.credits,
+                    'reason': 'No section information in the course catalog',
+                }
+                for r in CurriculumEntry.query.filter(
+                    CurriculumEntry.user_id == user.id,
+                    ~CurriculumEntry.status.in_(CurriculumEntry.SATISFIED),
+                ).all()
+                if canonical_code(r.course_code) not in in_catalog
+            ]
         blocked_by_prereqs = [
             {
                 'code': c.code,
@@ -1211,7 +1517,7 @@ def generate_schedule():
             student_profile = {
                 'major': user.major,
                 'year': user.current_year,
-                'gpa': user.gpa or 3.0,
+                'gpa': user.gpa if user.gpa is not None else 'Not provided',
                 'completed_courses': completed_courses,
                 'career_goal': user.career_goal,
                 'target_credits': max_credits
@@ -1339,6 +1645,8 @@ def generate_schedule():
         # Tell the student which courses were withheld and why.
         if blocked_by_prereqs:
             response_data['blocked_by_prerequisites'] = blocked_by_prereqs
+        if unscheduled_requirements:
+            response_data['unscheduled_requirements'] = unscheduled_requirements
         
         return jsonify(response_data), 200
         
@@ -1733,30 +2041,43 @@ def get_weekly_schedule(schedule_id):
 
 # ==================== Initialize Database ====================
 
-def ensure_user_schema():
-    """Add columns introduced after a database was first created.
+# Columns added after the first release, with the SQL type used when a
+# database predates them. db.create_all() creates missing tables but never
+# alters existing ones, and this project has no migration tool.
+_ADDED_USER_COLUMNS = {
+    'is_admin': 'BOOLEAN NOT NULL DEFAULT {false}',
+    'graduation_term': 'VARCHAR(20)',
+    'catalog_year': 'INTEGER',
+    'takes_summer': 'BOOLEAN NOT NULL DEFAULT {false}',
+    'minor': 'VARCHAR(200)',
+}
 
-    db.create_all() creates missing tables but never alters existing ones, and
-    this project has no migration tool, so add is_admin by hand when absent.
-    """
+
+def ensure_user_schema():
+    """Add user columns introduced after a database was first created."""
     from sqlalchemy import inspect, text
 
     inspector = inspect(db.engine)
     if 'user' not in inspector.get_table_names():
-        return False
+        return []
 
-    columns = {c['name'] for c in inspector.get_columns('user')}
-    if 'is_admin' in columns:
-        return False
+    existing = {c['name'] for c in inspector.get_columns('user')}
+    false_literal = '0' if db.engine.dialect.name == 'sqlite' else 'FALSE'
 
-    default = '0' if db.engine.dialect.name == 'sqlite' else 'FALSE'
-    # "user" is a reserved word in Postgres, so it stays quoted.
-    db.session.execute(
-        text(f'ALTER TABLE "user" ADD COLUMN is_admin BOOLEAN NOT NULL DEFAULT {default}')
-    )
-    db.session.commit()
-    print('Added is_admin column to user table')
-    return True
+    added = []
+    for column, ddl in _ADDED_USER_COLUMNS.items():
+        if column in existing:
+            continue
+        # "user" is a reserved word in Postgres, so it stays quoted.
+        db.session.execute(text(
+            f'ALTER TABLE "user" ADD COLUMN {column} {ddl.format(false=false_literal)}'
+        ))
+        added.append(column)
+
+    if added:
+        db.session.commit()
+        print(f"Added user column(s): {', '.join(added)}")
+    return added
 
 
 def ensure_admins():
