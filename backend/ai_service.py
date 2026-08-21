@@ -17,6 +17,23 @@ from course_utils import parse_prerequisites
 client = OpenAI(api_key=os.getenv('OPENAI_API_KEY', ''))
 
 
+def format_degree_progress(progress) -> str:
+    """Render degree progress for a prompt, or '' when there is no curriculum."""
+    if not progress:
+        return ''
+    remaining = progress.get('remaining_codes') or []
+    listed = ', '.join(remaining[:40]) or 'none'
+    return f"""
+Degree Progress (from the student's own curriculum - treat this as authoritative):
+- Completed: {progress.get('completed_courses', 0)} of {progress.get('total_courses', 0)} required courses
+- Credits: {progress.get('credits_completed', 0)} done, {progress.get('credits_remaining', 0)} remaining
+- Still required: {listed}
+
+Only recommend courses from the still-required list. Never suggest a course the
+student has already completed or one that is not part of their degree plan.
+"""
+
+
 class AIRecommendationEngine:
     """
     AI-powered course recommendation engine using GPT-4
@@ -52,6 +69,7 @@ class AIRecommendationEngine:
             # Build the prompt
             prompt = f"""You are an expert academic advisor for university students. Analyze the student profile and recommend the most suitable courses for next semester.
 
+{format_degree_progress(student_profile.get('degree_progress'))}
 Student Profile:
 - Major: {student_profile.get('major', 'Undeclared')}
 - Current Year: {student_profile.get('year', 'Freshman')}
@@ -186,7 +204,7 @@ Student Context:
 - Year: {student_context.get('year', 'Freshman')}
 - Completed Courses: {', '.join(student_context.get('completed_courses', []))}
 - Career Goal: {student_context.get('career_goal', 'Not specified')}
-{current_schedule_info}
+{format_degree_progress(student_context.get('degree_progress'))}{current_schedule_info}
 Available Courses Summary:
 {courses_summary}
 
@@ -198,6 +216,8 @@ Guidelines:
 5. Consider remaining credit availability
 6. Explain why each course is a good fit
 7. Keep responses concise (2-3 paragraphs max)
+8. When the student has a degree plan, answer in terms of it - what is left,
+   what unlocks next, and whether they are on track
 
 When suggesting courses, format them clearly:
 📚 **CS225 - Data Structures** (4 credits)

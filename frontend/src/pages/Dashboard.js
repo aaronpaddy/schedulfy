@@ -34,6 +34,7 @@ import {
   Delete as DeleteIcon,
 } from '@mui/icons-material';
 import { userAPI, scheduleAPI } from '../services/api';
+import { curriculumAPI } from '../services/api';
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -46,6 +47,8 @@ const Dashboard = () => {
   const [scheduleToDelete, setScheduleToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [userData, setUserData] = useState(null);
+
+  const [degreeProgress, setDegreeProgress] = useState(null);
 
   useEffect(() => {
       const fetchDashboardData = async () => {
@@ -61,6 +64,12 @@ const Dashboard = () => {
         }
         
         // Then try to load from backend (this will override localStorage if backend has newer data)
+        // Real degree progress comes from the student's curriculum.
+        curriculumAPI
+          .get()
+          .then((res) => setDegreeProgress(res.data.progress || null))
+          .catch(() => setDegreeProgress(null));
+
         const userResponse = await userAPI.getUser(userId);
         if (userResponse.data) {
           setUserData(userResponse.data);
@@ -348,32 +357,51 @@ const Dashboard = () => {
               Degree Progress
             </Typography>
           </Box>
-          <Box sx={{ mb: 2 }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-              <Typography variant="body2" color="text.secondary">
-                Progress towards graduation
+          {degreeProgress && degreeProgress.total_courses > 0 ? (
+            <>
+              <Box sx={{ mb: 2 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                  <Typography variant="body2" color="text.secondary">
+                    Progress towards graduation
+                  </Typography>
+                  <Typography variant="body2" fontWeight="600" sx={{ color: '#475569' }}>
+                    {degreeProgress.credits_total
+                      ? Math.round((degreeProgress.credits_completed / degreeProgress.credits_total) * 100)
+                      : 0}%
+                  </Typography>
+                </Box>
+                <LinearProgress 
+                  variant="determinate" 
+                  value={degreeProgress.credits_total
+                    ? Math.round((degreeProgress.credits_completed / degreeProgress.credits_total) * 100)
+                    : 0}
+                  sx={{ 
+                    height: 8, 
+                    borderRadius: 4,
+                    backgroundColor: '#e2e8f0',
+                    '& .MuiLinearProgress-bar': {
+                      background: 'linear-gradient(90deg, #475569 0%, #334155 100%)',
+                      borderRadius: 4,
+                    }
+                  }} 
+                />
+              </Box>
+              <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.875rem' }}>
+                {degreeProgress.credits_completed} of {degreeProgress.credits_total} credits &middot;{' '}
+                {degreeProgress.remaining_courses} course{degreeProgress.remaining_courses === 1 ? '' : 's'} left
               </Typography>
-              <Typography variant="body2" fontWeight="600" sx={{ color: '#475569' }}>
-                {Math.min(100, Math.round((recentSchedules.reduce((total, schedule) => total + (schedule.total_credits || 0), 0) / 120) * 100))}%
+            </>
+          ) : (
+            <Box>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                Upload your curriculum to track real progress and get recommendations
+                limited to the courses you actually need.
               </Typography>
+              <Button variant="outlined" size="small" onClick={() => navigate('/degree-plan')}>
+                Set up my degree plan
+              </Button>
             </Box>
-            <LinearProgress 
-              variant="determinate" 
-              value={Math.min(100, Math.round((recentSchedules.reduce((total, schedule) => total + (schedule.total_credits || 0), 0) / 120) * 100))}
-              sx={{ 
-                height: 8, 
-                borderRadius: 4,
-                backgroundColor: '#e2e8f0',
-                '& .MuiLinearProgress-bar': {
-                  background: 'linear-gradient(90deg, #475569 0%, #334155 100%)',
-                  borderRadius: 4,
-                }
-              }} 
-            />
-          </Box>
-          <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.875rem' }}>
-            {recentSchedules.reduce((total, schedule) => total + (schedule.total_credits || 0), 0)} of 120 credits completed
-          </Typography>
+          )}
         </CardContent>
       </Card>
 

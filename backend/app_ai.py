@@ -178,6 +178,38 @@ def error_response(e, status=500, message=None, **extra):
     return jsonify(payload), status
 
 
+def curriculum_progress(user):
+    """Degree progress, or None when the student has no curriculum yet."""
+    entries = CurriculumEntry.query.filter_by(user_id=user.id).all()
+    if not entries:
+        return None
+
+    done = [e for e in entries if e.is_satisfied()]
+    credits_total = sum(e.credits or 0 for e in entries)
+    credits_done = sum(e.credits or 0 for e in done)
+    return {
+        'total_courses': len(entries),
+        'completed_courses': len(done),
+        'remaining_courses': len(entries) - len(done),
+        'credits_total': credits_total,
+        'credits_completed': credits_done,
+        'credits_remaining': max(credits_total - credits_done, 0),
+        'remaining_codes': [e.course_code for e in entries if not e.is_satisfied()],
+    }
+
+
+def scope_to_curriculum(user, courses):
+    """Narrow a catalog list to what this student still needs.
+
+    Every AI surface has to agree on the candidate pool, otherwise the builder
+    recommends courses the degree plan never asked for.
+    """
+    required = curriculum_required_codes(user)
+    if required is None:
+        return courses
+    return [c for c in courses if canonical_code(c.code) in required]
+
+
 def completed_course_codes(user):
     """Course codes the student has satisfied.
 
@@ -694,16 +726,17 @@ def get_ai_recommendations():
             'career_goal': user.career_goal or 'Not specified',
             'learning_preferences': user.learning_preferences,
             'target_credits': data.get('target_credits', 15),
-            'focus_area': data.get('focus_area', '')
+            'focus_area': data.get('focus_area', ''),
+            'degree_progress': curriculum_progress(user),
         }
         
         # Get available courses
         semester = data.get('semester', 'Fall')
         year = data.get('year', 2025)
         
-        available_courses = Course.query.filter(
+        available_courses = scope_to_curriculum(user, Course.query.filter(
             (Course.semester == semester) | (Course.semester == 'Both')
-        ).all()
+        ).all())
         
         # Convert to dicts
         courses_data = [course.to_dict() for course in available_courses]
@@ -766,7 +799,7 @@ def chat_with_ai():
             'name': user.username,
             'major': user.major,
             'year': user.current_year,
-            'completed_courses': preferences.get('completed_courses', []),
+            'completed_courses': completed_course_codes(user),
             'career_goal': user.career_goal
         }
         
@@ -784,8 +817,9 @@ def chat_with_ai():
             student_context['max_credits'] = schedule_context.get('maxCredits', 18)
             student_context['remaining_credits'] = schedule_context.get('remainingCredits', 18)
         
-        # Get available courses
-        available_courses = Course.query.all()
+        # Get available courses, narrowed to the degree plan when there is one
+        available_courses = scope_to_curriculum(user, Course.query.all())
+        student_context['degree_progress'] = curriculum_progress(user)
         courses_data = [course.to_dict() for course in available_courses]
         
         # Get AI response
@@ -924,10 +958,10 @@ def suggest_for_existing_schedule(schedule_id):
                 'max_credits': max_credits
             }), 200
         
-        # Get all available courses
-        available_courses = Course.query.filter(
+        # Get all available courses, narrowed to the degree plan when present
+        available_courses = scope_to_curriculum(user, Course.query.filter(
             (Course.semester == schedule.semester) | (Course.semester == 'Both')
-        ).all()
+        ).all())
         
         # Filter out courses already in schedule and completed courses
         # Courses already taken count toward prerequisites, as do the ones
