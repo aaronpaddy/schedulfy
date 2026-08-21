@@ -141,3 +141,58 @@ def _expand_day_token(token):
             days.add(_DAY_ALIASES[single])
         i += 1
     return days
+
+
+def parse_json_list(raw):
+    """Parse a value that should be a JSON array, tolerating encoding damage.
+
+    Accepts a real list, a JSON string, or a JSON string that was encoded twice
+    by an export/import round-trip. Returns [] when nothing usable is found.
+    """
+    return _flatten_json(raw, 0)
+
+
+def _flatten_json(value, depth):
+    if depth > MAX_UNWRAP_DEPTH or value is None:
+        return []
+
+    if isinstance(value, (list, tuple)):
+        # A single-element list wrapping a JSON string is the round-trip
+        # damage; unwrap it rather than treating the string as an item.
+        if len(value) == 1 and isinstance(value[0], str) and value[0].strip()[:1] in '[{':
+            return _flatten_json(value[0], depth + 1)
+        return [item for item in value if item not in (None, '')]
+
+    if isinstance(value, dict):
+        return [value]
+
+    if not isinstance(value, str):
+        return []
+
+    text = value.strip()
+    if not text or text in ('[]', 'null', 'None'):
+        return []
+    if text[0] not in '[{':
+        return []
+
+    try:
+        return _flatten_json(json.loads(text), depth + 1)
+    except (ValueError, TypeError):
+        return []
+
+
+def serialize_time_slots(raw):
+    """Return a clean JSON array of time-slot objects, safe to re-import."""
+    slots = [slot for slot in parse_json_list(raw) if isinstance(slot, dict)]
+    return json.dumps(slots)
+
+
+def serialize_tags(raw):
+    """Return a clean JSON array of tag strings, safe to re-import."""
+    tags, seen = [], set()
+    for tag in parse_prerequisites(raw):   # same shapes: list of plain strings
+        text = str(tag).strip()
+        if text and text.lower() not in seen:
+            seen.add(text.lower())
+            tags.append(text)
+    return json.dumps(tags)

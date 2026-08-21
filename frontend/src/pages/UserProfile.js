@@ -98,6 +98,10 @@ const UserProfile = () => {
       avoid_early_morning: defaultUser.preferences.avoid_early_morning,
       prefer_online_courses: defaultUser.preferences.prefer_online_courses,
       completed_courses: defaultUser.preferences.completed_courses || [],
+      graduation_term: defaultUser.graduation_term || '',
+      catalog_year: defaultUser.catalog_year || '',
+      takes_summer: defaultUser.takes_summer || false,
+      minor: defaultUser.minor || '',
     });
     setLoadingData(false);
     
@@ -146,6 +150,10 @@ const UserProfile = () => {
             avoid_early_morning: backendPrefs.avoid_early_morning || false,
             prefer_online_courses: backendPrefs.prefer_online_courses || false,
             completed_courses: backendPrefs.completed_courses || [],
+            graduation_term: backendUser.graduation_term || '',
+            catalog_year: backendUser.catalog_year || '',
+            takes_summer: backendUser.takes_summer || false,
+            minor: backendUser.minor || '',
           });
           
           // Save to localStorage
@@ -181,6 +189,10 @@ const UserProfile = () => {
         major: formData.major,
         graduation_year: formData.graduation_year,
         current_year: formData.current_year,
+        graduation_term: formData.graduation_term,
+        catalog_year: formData.catalog_year,
+        takes_summer: formData.takes_summer,
+        minor: formData.minor,
         preferences: {
           preferred_times: formData.preferred_times,
           preferred_departments: formData.preferred_departments,
@@ -559,6 +571,59 @@ const UserProfile = () => {
                       ))}
                     </Select>
                   </FormControl>
+                </Grid>
+
+                <Grid xs={12} md={6}>
+                  <FormControl fullWidth disabled={!isEditing}>
+                    <InputLabel>Graduation Term</InputLabel>
+                    <Select
+                      value={formData.graduation_term || ''}
+                      label="Graduation Term"
+                      onChange={(e) => handleInputChange('graduation_term', e.target.value)}
+                    >
+                      <MenuItem value="">Not sure yet</MenuItem>
+                      <MenuItem value="Fall">Fall</MenuItem>
+                      <MenuItem value="Spring">Spring</MenuItem>
+                      <MenuItem value="Summer">Summer</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Grid>
+
+                <Grid xs={12} md={6}>
+                  <TextField
+                    fullWidth
+                    label="Catalog Year"
+                    type="number"
+                    value={formData.catalog_year || ''}
+                    onChange={(e) => handleInputChange('catalog_year', e.target.value)}
+                    disabled={!isEditing}
+                    inputProps={{ min: 2000, max: 2100 }}
+                    helperText="The year you enrolled - it decides which requirements apply"
+                  />
+                </Grid>
+
+                <Grid xs={12} md={6}>
+                  <TextField
+                    fullWidth
+                    label="Minor or Concentration"
+                    value={formData.minor || ''}
+                    onChange={(e) => handleInputChange('minor', e.target.value)}
+                    disabled={!isEditing}
+                    helperText="Leave blank if none"
+                  />
+                </Grid>
+
+                <Grid xs={12} md={6}>
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={formData.takes_summer || false}
+                        onChange={(e) => handleInputChange('takes_summer', e.target.checked)}
+                        disabled={!isEditing}
+                      />
+                    }
+                    label="I'm willing to take summer or winter terms"
+                  />
                 </Grid>
 
                 <Grid xs={12}>

@@ -22,6 +22,8 @@ from models import db, User, Course, Schedule, ScheduleCourses, ChatHistory, Cur
 from ai_service import ai_recommender, workload_predictor, course_intelligence, curriculum_extractor
 from course_utils import (
     canonical_code,
+    serialize_tags,
+    serialize_time_slots,
     normalize_days,
     parse_prerequisites,
     serialize_prerequisites,
@@ -159,6 +161,21 @@ def admin_required(f):
         return f(*args, **kwargs)
 
     return decorated_function
+
+
+def error_response(e, status=500, message=None, **extra):
+    """Log the real exception; return something safe to show a browser.
+
+    Returning str(e) put SQLAlchemy statements - including a freshly created
+    password hash - straight onto the page. The detail belongs in the logs.
+    """
+    app.logger.exception('Request failed: %s', e)
+    payload = dict(extra)
+    payload['error'] = (
+        str(e) if not IS_PRODUCTION
+        else (message or 'Something went wrong. Please try again.')
+    )
+    return jsonify(payload), status
 
 
 def completed_course_codes(user):
@@ -375,7 +392,7 @@ def extract_curriculum():
         return jsonify(result), 200
 
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return error_response(e, 500, success=False)
 
 
 @app.route('/api/curriculum', methods=['GET'])
@@ -407,7 +424,7 @@ def get_curriculum():
             },
         }), 200
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return error_response(e, 500)
 
 
 @app.route('/api/curriculum', methods=['POST'])
@@ -479,7 +496,7 @@ def save_curriculum():
         }), 200
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        return error_response(e, 500)
 
 
 @app.route('/api/curriculum/<int:entry_id>', methods=['PUT', 'DELETE'])
@@ -523,7 +540,7 @@ def modify_curriculum_entry(entry_id):
         return jsonify({'message': 'Entry updated', 'entry': entry.to_dict()}), 200
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        return error_response(e, 500)
 
 
 # ==================== Health Check ====================
@@ -594,7 +611,7 @@ def signup():
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 400
+        return error_response(e, 400)
 
 
 @app.route('/api/auth/login', methods=['POST'])
@@ -625,7 +642,7 @@ def login():
         }), 200
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 400
+        return error_response(e, 400)
 
 
 @app.route('/api/auth/logout', methods=['POST'])
@@ -713,10 +730,7 @@ def get_ai_recommendations():
         return jsonify(ai_response), 200
         
     except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        return error_response(e, 500, success=False)
 
 
 @app.route('/api/ai/chat', methods=['POST'])
@@ -805,10 +819,7 @@ def chat_with_ai():
         return jsonify(response), 200
         
     except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        return error_response(e, 500, success=False)
 
 
 @app.route('/api/ai/workload-prediction', methods=['POST'])
@@ -841,10 +852,7 @@ def predict_workload():
         }), 200
         
     except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        return error_response(e, 500, success=False)
 
 
 @app.route('/api/ai/analyze-schedule/<int:schedule_id>', methods=['GET'])
@@ -871,10 +879,7 @@ def analyze_schedule(schedule_id):
         return jsonify(analysis), 200
         
     except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        return error_response(e, 500, success=False)
 
 
 @app.route('/api/ai/suggest-for-schedule/<int:schedule_id>', methods=['POST'])
@@ -990,10 +995,7 @@ def suggest_for_existing_schedule(schedule_id):
         }), 200
         
     except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        return error_response(e, 500, success=False)
 
 
 # ==================== Course Routes ====================
@@ -1028,7 +1030,7 @@ def get_courses():
         }), 200
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return error_response(e, 500)
 
 
 @app.route('/api/courses/<int:course_id>', methods=['GET'])
@@ -1053,7 +1055,7 @@ def get_course_detail(course_id):
         return jsonify(result), 200
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return error_response(e, 500)
 
 
 @app.route('/api/courses/import', methods=['POST'])
@@ -1126,9 +1128,27 @@ def import_courses():
                             course_data['prerequisites']
                         )
                     
+                    # A CSV cell is always a string, so the previous
+                    # isinstance(list) check silently discarded every
+                    # meeting time and left schedules unable to detect
+                    # conflicts.
                     if 'time_slots' in course_data:
-                        slots = course_data['time_slots']
-                        existing_course.time_slots = json.dumps(slots if isinstance(slots, list) else [])
+                        existing_course.time_slots = serialize_time_slots(
+                            course_data['time_slots']
+                        )
+
+                    # Fields the AI reads. Without these an imported catalog
+                    # forces the model to guess difficulty and workload.
+                    if 'difficulty' in course_data:
+                        existing_course.difficulty = as_float(
+                            course_data['difficulty'], existing_course.difficulty
+                        )
+                    if 'workload_hours' in course_data:
+                        existing_course.workload_hours = as_float(
+                            course_data['workload_hours'], existing_course.workload_hours
+                        )
+                    if 'career_tags' in course_data:
+                        existing_course.career_tags = serialize_tags(course_data['career_tags'])
                     
                     updated += 1
                 else:
@@ -1142,7 +1162,10 @@ def import_courses():
                         semester=course_data.get('semester', 'Fall'),
                         year=int(course_data.get('year', 2025)),
                         prerequisites=serialize_prerequisites(course_data.get('prerequisites')),
-                        time_slots=json.dumps(course_data.get('time_slots', [])) if isinstance(course_data.get('time_slots'), list) else '[]',
+                        time_slots=serialize_time_slots(course_data.get('time_slots')),
+                        difficulty=as_float(course_data.get('difficulty'), 3.0),
+                        workload_hours=as_float(course_data.get('workload_hours')),
+                        career_tags=serialize_tags(course_data.get('career_tags')),
                         max_capacity=int(course_data.get('max_capacity', 0)) if course_data.get('max_capacity') else None,
                         current_enrollment=int(course_data.get('current_enrollment', 0)) if course_data.get('current_enrollment') else None
                     )
@@ -1163,7 +1186,7 @@ def import_courses():
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        return error_response(e, 500)
 
 
 @app.route('/api/courses/export', methods=['GET'])
@@ -1184,7 +1207,8 @@ def export_courses():
         writer.writerow([
             'code', 'name', 'description', 'credits', 'department', 
             'semester', 'year', 'prerequisites', 'time_slots', 
-            'max_capacity', 'current_enrollment'
+            'max_capacity', 'current_enrollment',
+            'difficulty', 'workload_hours', 'career_tags'
         ])
         
         # Write course data
@@ -1198,9 +1222,12 @@ def export_courses():
                 course.semester or '',
                 course.year or '',
                 serialize_prerequisites(course.prerequisites),
-                course.time_slots or '[]',
+                serialize_time_slots(course.time_slots),
                 course.max_capacity or '',
-                course.current_enrollment or ''
+                course.current_enrollment or '',
+                course.difficulty if course.difficulty is not None else '',
+                course.workload_hours if course.workload_hours is not None else '',
+                serialize_tags(course.career_tags)
             ])
         
         output.seek(0)
@@ -1211,7 +1238,7 @@ def export_courses():
         }
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return error_response(e, 500)
 
 
 @app.route('/api/courses/clear', methods=['DELETE'])
@@ -1238,7 +1265,7 @@ def clear_courses():
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        return error_response(e, 500)
 
 
 @app.route('/api/courses/scrape', methods=['POST'])
@@ -1652,7 +1679,7 @@ def generate_schedule():
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        return error_response(e, 500)
 
 
 # ==================== User Profile Routes ====================
@@ -1695,6 +1722,16 @@ def manage_user(user_id):
             current_user.graduation_year = as_int(data['graduation_year'])
         if 'current_year' in data:
             current_user.current_year = data['current_year']
+        # Degree sequencing. The term matters as much as the year, and catalog
+        # year decides which edition of the requirements applies.
+        if 'graduation_term' in data:
+            current_user.graduation_term = data['graduation_term'] or None
+        if 'catalog_year' in data:
+            current_user.catalog_year = as_int(data['catalog_year'])
+        if 'takes_summer' in data:
+            current_user.takes_summer = bool(data['takes_summer'])
+        if 'minor' in data:
+            current_user.minor = data['minor'] or None
         if 'gpa' in data:
             current_user.gpa = as_float(data['gpa'])
         if 'career_goal' in data:
@@ -1722,7 +1759,7 @@ def manage_user(user_id):
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        return error_response(e, 500)
 
 
 @app.route('/api/users/<int:user_id>/preferences', methods=['GET', 'PUT'])
@@ -1774,7 +1811,7 @@ def manage_user_preferences(user_id):
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        return error_response(e, 500)
 
 
 @app.route('/api/schedules', methods=['GET'])
@@ -1792,7 +1829,7 @@ def get_user_schedules():
         }), 200
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return error_response(e, 500)
 
 
 @app.route('/api/schedule', methods=['POST'])
@@ -1867,7 +1904,7 @@ def create_schedule():
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        return error_response(e, 500)
 
 
 @app.route('/api/schedule/<int:schedule_id>', methods=['GET', 'PUT', 'DELETE'])
@@ -1948,7 +1985,7 @@ def manage_schedule(schedule_id):
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        return error_response(e, 500)
 
 
 @app.route('/api/schedule/<int:schedule_id>/weekly', methods=['GET'])
@@ -2036,7 +2073,7 @@ def get_weekly_schedule(schedule_id):
         return jsonify(weekly_schedule), 200
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return error_response(e, 500)
 
 
 # ==================== Initialize Database ====================
