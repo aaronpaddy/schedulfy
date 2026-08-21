@@ -10,6 +10,7 @@ import ScheduleViewer from './pages/ScheduleViewer';
 import UserProfile from './pages/UserProfile';
 import CourseDatasetManager from './pages/CourseDatasetManager';
 import DegreePlan from './pages/DegreePlan';
+import FloatingChatBot from './components/FloatingChatBot';
 import AIScheduleBuilder from './pages/AIScheduleBuilder';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
@@ -300,6 +301,10 @@ function AppContent() {
               </ProtectedRoute>
             } 
           />
+
+          {/* The builder page is retired: generation moved to the dashboard
+              and chat is a floating panel available on every page. */}
+          <Route path="/ai-builder" element={<Navigate to="/dashboard" replace />} />
 
           <Route 
             path="/degree-plan" 

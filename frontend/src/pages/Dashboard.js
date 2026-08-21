@@ -35,6 +35,7 @@ import {
 } from '@mui/icons-material';
 import { userAPI, scheduleAPI } from '../services/api';
 import { curriculumAPI } from '../services/api';
+import GenerateScheduleCard from '../components/GenerateScheduleCard';
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -348,6 +349,9 @@ const Dashboard = () => {
         </Grid>
       </Grid>
 
+      {/* Generate a schedule right here - no detour through another page. */}
+      <GenerateScheduleCard />
+
       {/* Progress Section */}
       <Card sx={{ mb: 5, background: 'white', border: '1px solid #e2e8f0', borderRadius: 2 }}>
         <CardContent sx={{ p: 3 }}>
@@ -419,7 +423,7 @@ const Dashboard = () => {
               variant="contained"
               size="large"
               startIcon={<AddIcon />}
-              onClick={() => navigate('/ai-builder')}
+              onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
               sx={{
                 background: 'linear-gradient(135deg, #3498db 0%, #2980b9 100%)',
                 boxShadow: '0 4px 12px rgba(52, 152, 219, 0.3)',
@@ -548,7 +552,7 @@ const Dashboard = () => {
                 variant="contained"
                 size="large"
                 startIcon={<AddIcon />}
-                onClick={() => navigate('/ai-builder')}
+                onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
                 sx={{
                   background: 'linear-gradient(135deg, #3498db 0%, #2980b9 100%)',
                   boxShadow: '0 4px 12px rgba(52, 152, 219, 0.3)',
@@ -597,7 +601,7 @@ const Dashboard = () => {
                   variant="outlined"
                   size="large"
                   startIcon={<AddIcon />}
-                  onClick={() => navigate('/ai-builder')}
+                  onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
                   sx={{
                     borderColor: 'rgba(255, 255, 255, 0.3)',
                     color: 'white',

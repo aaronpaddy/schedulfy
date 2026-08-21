@@ -2224,7 +2224,7 @@ def _add_missing_columns(table, columns):
     return added
 
 
-def ensure_user_schema():
+def ensure_schema():
     """Add columns introduced after a database was first created."""
     return (_add_missing_columns('user', _ADDED_USER_COLUMNS)
             + _add_missing_columns('course', _ADDED_COURSE_COLUMNS))
@@ -2286,16 +2286,19 @@ def init_db():
     """Initialize database with sample data"""
     with app.app_context():
         db.create_all()
-        
+
+        # Migrate BEFORE any ORM query. create_all() adds missing tables but
+        # never missing columns, so a model that gained a column will select
+        # one the database does not have yet - which fails at boot and takes
+        # the whole deploy down.
+        ensure_schema()
+
         # Check if we need sample data
         if Course.query.count() == 0:
             print("Loading sample courses with AI-ready data...")
             # Import sample data loader
             from load_sample_data import load_enhanced_courses
             load_enhanced_courses(db)
-        
-        # Bring an existing database up to the current schema
-        ensure_user_schema()
 
         # Normalize any prerequisite values left nested by older imports
         repair_prerequisite_encoding()

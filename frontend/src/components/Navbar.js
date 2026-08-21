@@ -55,7 +55,6 @@ const Navbar = () => {
 
   const navItems = [
     { label: 'Dashboard', path: '/dashboard', icon: <DashboardIcon /> },
-    { label: 'AI Builder', path: '/ai-builder', icon: <AutoAwesomeIcon />, featured: true },
     { label: 'My Degree Plan', path: '/degree-plan', icon: <SchoolIcon /> },
     { label: 'Course Catalog', path: '/courses', icon: <SchoolIcon /> },
     // The catalog is shared by everyone, so only admins get the tools that
