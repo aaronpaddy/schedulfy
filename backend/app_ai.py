@@ -102,6 +102,30 @@ def login_required(f):
     return decorated_function
 
 
+def as_int(value, default=None):
+    """Coerce a form value to int, treating blank input as 'not provided'.
+
+    HTML forms submit unfilled fields as '', which SQLite silently accepted into
+    an INTEGER column but Postgres rejects with InvalidTextRepresentation.
+    """
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return default
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def as_float(value, default=None):
+    """Coerce a form value to float, treating blank input as 'not provided'."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def get_current_user():
     """Get the current logged-in user"""
     if 'user_id' in session:
@@ -239,9 +263,9 @@ def signup():
             username=data['username'],
             email=data['email'],
             major=data.get('major', ''),
-            graduation_year=data.get('graduation_year'),
+            graduation_year=as_int(data.get('graduation_year')),
             current_year=data.get('current_year', 'Freshman'),
-            gpa=data.get('gpa'),
+            gpa=as_float(data.get('gpa')),
             career_goal=data.get('career_goal', ''),
             preferences=json.dumps(data.get('preferences', {})),
             learning_preferences=json.dumps(data.get('learning_preferences', {}))
@@ -1282,11 +1306,11 @@ def manage_user(user_id):
         if 'major' in data:
             current_user.major = data['major']
         if 'graduation_year' in data:
-            current_user.graduation_year = data['graduation_year']
+            current_user.graduation_year = as_int(data['graduation_year'])
         if 'current_year' in data:
             current_user.current_year = data['current_year']
         if 'gpa' in data:
-            current_user.gpa = data['gpa']
+            current_user.gpa = as_float(data['gpa'])
         if 'career_goal' in data:
             current_user.career_goal = data['career_goal']
         if 'learning_preferences' in data:
@@ -1294,7 +1318,7 @@ def manage_user(user_id):
         if 'preferences' in data:
             current_user.preferences = json.dumps(data['preferences']) if isinstance(data['preferences'], dict) else data['preferences']
         if 'workload_capacity' in data:
-            current_user.workload_capacity = data['workload_capacity']
+            current_user.workload_capacity = as_int(data['workload_capacity'], 25)
         if 'risk_tolerance' in data:
             current_user.risk_tolerance = data['risk_tolerance']
         
