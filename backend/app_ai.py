@@ -67,9 +67,13 @@ if IS_PRODUCTION and app.config['SECRET_KEY'] == 'dev-secret-key-change-in-produ
     )
 
 # Session configuration
-# The frontend is served from a different domain than the API, so the session
-# cookie is cross-site: browsers only send it when SameSite=None AND Secure.
-app.config['SESSION_COOKIE_SAMESITE'] = 'None' if IS_PRODUCTION else 'Lax'
+# 'None' is the safe production default: it works whether the frontend calls the
+# API same-origin (through a proxy) or cross-domain. Cross-domain browsers only
+# send the cookie when SameSite=None AND Secure. Once the API is confirmed
+# same-origin, set SESSION_COOKIE_SAMESITE=Lax for CSRF protection.
+app.config['SESSION_COOKIE_SAMESITE'] = os.getenv(
+    'SESSION_COOKIE_SAMESITE', 'None' if IS_PRODUCTION else 'Lax'
+)
 app.config['SESSION_COOKIE_SECURE'] = IS_PRODUCTION
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_NAME'] = 'schedulfy_session'

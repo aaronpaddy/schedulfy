@@ -1,8 +1,17 @@
 import axios from 'axios';
 
-// API base URL comes from the build-time environment.
-// Set REACT_APP_API_URL to the deployed backend origin (no trailing slash).
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5003';
+// API base URL, resolved at build time.
+//
+// Production builds default to '' (same origin), so requests go to /api/* on
+// the site's own domain and Render's rewrite rule proxies them to the backend.
+// Keeping the API same-origin means the session cookie is first-party -
+// Safari and Chrome incognito block third-party cookies, which logs users out.
+//
+// Set REACT_APP_API_URL explicitly only when the frontend is hosted somewhere
+// that cannot proxy (for example Vercel), and expect cross-site cookie limits.
+const API_BASE_URL =
+  process.env.REACT_APP_API_URL ??
+  (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:5003');
 
 // Create axios instance
 const api = axios.create({
