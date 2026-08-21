@@ -11,6 +11,7 @@ import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from datetime import datetime
+from course_utils import parse_prerequisites
 
 # Initialize OpenAI client
 client = OpenAI(api_key=os.getenv('OPENAI_API_KEY', ''))
@@ -68,13 +69,20 @@ Task: Recommend {num_recommendations} courses that:
 4. Balance workload effectively
 5. Support long-term career objectives
 
+Only recommend courses whose prerequisites the student has already completed,
+based on the prerequisite list shown for each course and the student's completed
+courses above. If a strong match is blocked by a missing prerequisite, recommend
+the prerequisite instead.
+
 For each recommended course, provide:
 - Course code and name
 - Reasoning (2-3 sentences explaining why this course is ideal)
 - Career relevance (how it helps achieve their career goal)
-- Difficulty level (1-5 scale)
-- Estimated workload (hours per week - this is different from credits)
-- Prerequisites status (met/not met)
+- Difficulty level (1-5 scale) - copy the value given for the course; only
+  estimate it when the course list shows none
+- Estimated workload (hours per week - copy the value given for the course;
+  only estimate it when the course list shows none. Not the same as credits)
+- Prerequisites status (met/not met), derived from the data above
 
 Format your response as a JSON array of objects with these fields:
 [
@@ -305,13 +313,32 @@ Format as JSON:
             }
     
     def _format_courses_for_prompt(self, courses: List[Dict], limit: int = 50) -> str:
-        """Format courses for AI prompt"""
+        """Format courses for AI prompt.
+
+        Includes the prerequisite, difficulty and workload values held in the
+        database. Without them the model invented all three from the course
+        code alone.
+        """
         formatted = []
         for i, course in enumerate(courses[:limit]):
-            formatted.append(
+            line = (
                 f"{i+1}. {course['code']} - {course['name']} "
                 f"({course['credits']} cr) - {course.get('department', 'N/A')}"
             )
+
+            prereqs = parse_prerequisites(course.get('prerequisites'))
+            line += f" | prerequisites: {', '.join(prereqs) if prereqs else 'none'}"
+
+            if course.get('difficulty') is not None:
+                line += f" | difficulty: {course['difficulty']}/5"
+            if course.get('workload_hours') is not None:
+                line += f" | workload: {course['workload_hours']} hrs/wk"
+
+            tags = course.get('career_tags')
+            if isinstance(tags, list) and tags:
+                line += f" | career tags: {', '.join(tags)}"
+
+            formatted.append(line)
         return "\n".join(formatted)
     
     def _format_courses_summary(self, courses: List[Dict], limit: int = 30) -> str:
@@ -511,7 +538,9 @@ class CourseIntelligence:
     """
     
     def __init__(self):
-        self.vectorizer = TfidfVectorizer(max_features=200)
+        # English stop words stop generic catalog phrasing ("introduction to
+        # the study of") from dominating the similarity score.
+        self.vectorizer = TfidfVectorizer(max_features=500, stop_words='english')
         self.course_embeddings = None
         self.courses_cache = []
     
@@ -520,11 +549,21 @@ class CourseIntelligence:
         try:
             self.courses_cache = courses
             
-            # Create text representation of each course
-            course_texts = [
-                f"{c['name']} {c.get('description', '')} {c.get('department', '')}"
-                for c in courses
-            ]
+            # Create text representation of each course. Department and
+            # career tags are repeated so subject area outweighs incidental
+            # wording shared across unrelated catalog entries.
+            def course_text(c):
+                tags = c.get('career_tags')
+                tags_text = ' '.join(tags) if isinstance(tags, list) else ''
+                department = c.get('department', '')
+                return ' '.join([
+                    c.get('name', ''),
+                    c.get('description', ''),
+                    department, department,
+                    tags_text, tags_text,
+                ])
+
+            course_texts = [course_text(c) for c in courses]
             
             # Build embeddings
             self.course_embeddings = self.vectorizer.fit_transform(course_texts)
@@ -535,7 +574,9 @@ class CourseIntelligence:
     def find_similar_courses(self, course_id: int, top_n: int = 5) -> List[Dict[str, Any]]:
         """Find similar courses using TF-IDF similarity"""
         try:
-            if not self.course_embeddings or not self.courses_cache:
+            # A sparse matrix has no truth value, so compare against None
+            # explicitly - `not matrix` raises and silently killed this feature.
+            if self.course_embeddings is None or not self.courses_cache:
                 return []
             
             # Find course index

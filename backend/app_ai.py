@@ -18,6 +18,13 @@ from models import db, User, Course, Schedule, ScheduleCourses, ChatHistory
 
 # Import AI services
 from ai_service import ai_recommender, workload_predictor, course_intelligence
+from course_utils import (
+    canonical_code,
+    normalize_days,
+    parse_prerequisites,
+    serialize_prerequisites,
+    unmet_prerequisites,
+)
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -157,12 +164,9 @@ def has_time_conflict(course1, course2):
                 if not day1 or not day2:
                     continue
                 
-                # Handle comma-separated days
-                days1 = [d.strip() for d in day1.split(',')] if day1 else []
-                days2 = [d.strip() for d in day2.split(',')] if day2 else []
-                
-                # Check if any days overlap
-                common_days = set(days1) & set(days2)
+                # Expand to canonical weekday names so 'MWF', 'Mon,Wed,Fri'
+                # and 'monday' all compare equal.
+                common_days = normalize_days(day1) & normalize_days(day2)
                 if not common_days:
                     continue
                 
@@ -395,7 +399,18 @@ def get_ai_recommendations():
             num_recommendations=data.get('num_recommendations', 8)
         )
         
-        # Return the AI response directly (it already has success and recommendations fields)
+        # The model is asked for prerequisites_met, but a language model is not
+        # the right authority on it. Recompute from the catalog so the badge the
+        # UI shows is backed by data rather than inference.
+        by_code = {canonical_code(c.code): c for c in available_courses}
+        for rec in ai_response.get('recommendations', []) or []:
+            course = by_code.get(canonical_code(rec.get('course_code')))
+            if course is None:
+                continue
+            missing = unmet_prerequisites(course.prerequisites, completed_courses)
+            rec['prerequisites_met'] = not missing
+            rec['missing_prerequisites'] = missing
+
         return jsonify(ai_response), 200
         
     except Exception as e:
@@ -611,11 +626,15 @@ def suggest_for_existing_schedule(schedule_id):
         ).all()
         
         # Filter out courses already in schedule and completed courses
+        # Courses already taken count toward prerequisites, as do the ones
+        # already on this schedule.
+        satisfied = list(completed_courses) + list(current_course_codes)
         eligible_courses = [
             c for c in available_courses 
             if c.code not in current_course_codes 
             and c.code not in completed_courses
             and c.credits <= remaining_credits  # Only courses that fit
+            and not unmet_prerequisites(c.prerequisites, satisfied)
         ]
         
         # Build student profile with current schedule context
@@ -801,8 +820,12 @@ def import_courses():
                     
                     # Handle JSON fields
                     if 'prerequisites' in course_data:
-                        prereqs = course_data['prerequisites']
-                        existing_course.prerequisites = json.dumps(prereqs if isinstance(prereqs, list) else [prereqs])
+                        # serialize_prerequisites unwraps values that are
+                        # already JSON, so re-importing an export no longer
+                        # nests the list inside itself.
+                        existing_course.prerequisites = serialize_prerequisites(
+                            course_data['prerequisites']
+                        )
                     
                     if 'time_slots' in course_data:
                         slots = course_data['time_slots']
@@ -819,7 +842,7 @@ def import_courses():
                         department=course_data.get('department', ''),
                         semester=course_data.get('semester', 'Fall'),
                         year=int(course_data.get('year', 2025)),
-                        prerequisites=json.dumps(course_data.get('prerequisites', [])) if isinstance(course_data.get('prerequisites'), list) else '[]',
+                        prerequisites=serialize_prerequisites(course_data.get('prerequisites')),
                         time_slots=json.dumps(course_data.get('time_slots', [])) if isinstance(course_data.get('time_slots'), list) else '[]',
                         max_capacity=int(course_data.get('max_capacity', 0)) if course_data.get('max_capacity') else None,
                         current_enrollment=int(course_data.get('current_enrollment', 0)) if course_data.get('current_enrollment') else None
@@ -875,7 +898,7 @@ def export_courses():
                 course.department or '',
                 course.semester or '',
                 course.year or '',
-                course.prerequisites or '[]',
+                serialize_prerequisites(course.prerequisites),
                 course.time_slots or '[]',
                 course.max_capacity or '',
                 course.current_enrollment or ''
@@ -1134,10 +1157,23 @@ def generate_schedule():
         preferences = json.loads(user.preferences) if user.preferences else {}
         completed_courses = preferences.get('completed_courses', [])
         
-        # Filter out completed courses
+        # Filter out completed courses and anything the student is not yet
+        # eligible for. Without the prerequisite check a first-year student
+        # was being scheduled straight into upper-level courses.
         eligible_courses = [
             c for c in available_courses 
             if c.code not in completed_courses and c.credits >= 1
+            and not unmet_prerequisites(c.prerequisites, completed_courses)
+        ]
+        blocked_by_prereqs = [
+            {
+                'code': c.code,
+                'name': c.name,
+                'missing_prerequisites': unmet_prerequisites(c.prerequisites, completed_courses),
+            }
+            for c in available_courses
+            if c.code not in completed_courses
+            and unmet_prerequisites(c.prerequisites, completed_courses)
         ]
         
         # Use AI recommendations if enabled
@@ -1217,6 +1253,10 @@ def generate_schedule():
                     response_data['conflicts_avoided'] = conflicts_avoided
                     response_data['message'] = f'AI-optimized schedule generated successfully. {len(conflicts_avoided)} time conflict(s) avoided.'
                 
+                # Tell the student which courses were withheld and why.
+                if blocked_by_prereqs:
+                    response_data['blocked_by_prerequisites'] = blocked_by_prereqs
+                
                 return jsonify(response_data), 200
         
         # Fallback to basic algorithm (with conflict checking)
@@ -1265,6 +1305,10 @@ def generate_schedule():
         if conflicts_avoided:
             response_data['conflicts_avoided'] = conflicts_avoided
             response_data['message'] = f'Schedule generated successfully. {len(conflicts_avoided)} time conflict(s) avoided.'
+        
+        # Tell the student which courses were withheld and why.
+        if blocked_by_prereqs:
+            response_data['blocked_by_prerequisites'] = blocked_by_prereqs
         
         return jsonify(response_data), 200
         
@@ -1641,6 +1685,26 @@ def get_weekly_schedule(schedule_id):
 
 # ==================== Initialize Database ====================
 
+def repair_prerequisite_encoding():
+    """Rewrite prerequisite columns that were stored as nested JSON.
+
+    An export/import round-trip used to wrap the JSON list inside another list,
+    producing values like '["[\\"CS101\\"]"]'. Re-serializing flattens them
+    back to '["CS101"]'. Idempotent: rows already clean are left untouched.
+    """
+    repaired = 0
+    for course in Course.query.all():
+        cleaned = serialize_prerequisites(course.prerequisites)
+        if cleaned != (course.prerequisites or '[]'):
+            course.prerequisites = cleaned
+            repaired += 1
+
+    if repaired:
+        db.session.commit()
+        print(f"Repaired prerequisite encoding on {repaired} course(s)")
+    return repaired
+
+
 def init_db():
     """Initialize database with sample data"""
     with app.app_context():
@@ -1653,6 +1717,9 @@ def init_db():
             from load_sample_data import load_enhanced_courses
             load_enhanced_courses(db)
         
+        # Normalize any prerequisite values left nested by older imports
+        repair_prerequisite_encoding()
+
         # Build course intelligence index
         courses = Course.query.all()
         course_intelligence.build_course_index([c.to_dict() for c in courses])
