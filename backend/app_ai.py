@@ -1633,10 +1633,33 @@ def generate_schedule():
                 num_recommendations=6
             )
             
-            if ai_result['success']:
-                # Add recommended courses to schedule (with conflict checking)
-                recommended_codes = [r['course_code'] for r in ai_result['recommendations']]
-                selected_courses = [c for c in eligible_courses if c.code in recommended_codes]
+            # Match on canonical codes: the model often normalizes "ENG 207"
+            # to "ENG207", and a literal comparison dropped those silently.
+            # Keep the model's order too - it ranks by priority, and the credit
+            # limit truncates, so iterating the catalog discarded its judgment.
+            by_code = {canonical_code(c.code): c for c in eligible_courses}
+            selected_courses = []
+            proposed = []
+            if ai_result.get('success'):
+                for rec in ai_result.get('recommendations') or []:
+                    code = rec.get('course_code')
+                    proposed.append(code)
+                    course = by_code.get(canonical_code(code))
+                    if course is not None and course not in selected_courses:
+                        selected_courses.append(course)
+
+            unmatched = [
+                code for code in proposed
+                if canonical_code(code) not in by_code
+            ]
+            if unmatched:
+                app.logger.warning(
+                    'AI proposed courses that are not eligible: %s', unmatched
+                )
+
+            # A successful call that matched nothing usable still needs to
+            # produce a schedule, so fall through to the deterministic pick.
+            if ai_result.get('success') and selected_courses:
                 
                 total_credits = 0
                 added_courses = []
