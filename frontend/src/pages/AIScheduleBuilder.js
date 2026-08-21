@@ -693,17 +693,22 @@ function AIScheduleBuilder() {
               </Alert>
             )}
 
-          {scheduleData?.unscheduled_requirements &&
-            scheduleData.unscheduled_requirements.length > 0 && (
+          {scheduleData?.scheduled_without_times &&
+            scheduleData.scheduled_without_times.length > 0 && (
               <Alert severity="info" sx={{ mb: 2 }}>
                 <Typography variant="subtitle2" gutterBottom>
-                  Still required, but not schedulable yet:{' '}
-                  {scheduleData.unscheduled_requirements.length}
+                  Planned, but with no meeting times yet:{' '}
+                  {scheduleData.scheduled_without_times.length}
                 </Typography>
-                {scheduleData.unscheduled_requirements.map((item, idx) => (
+                <Typography variant="body2">
+                  These are on your schedule and count toward your credits, but they
+                  could not be checked for time conflicts. Add their times once you
+                  see them in the registration portal.
+                </Typography>
+                {scheduleData.scheduled_without_times.map((item, idx) => (
                   <Typography key={idx} variant="body2" sx={{ ml: 2, mt: 0.5 }}>
                     • <strong>{item.code}</strong>
-                    {item.title ? ` - ${item.title}` : ''} ({item.reason})
+                    {item.title ? ` - ${item.title}` : ''}
                   </Typography>
                 ))}
               </Alert>

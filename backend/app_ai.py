@@ -22,6 +22,7 @@ from models import db, User, Course, Schedule, ScheduleCourses, ChatHistory, Cur
 from ai_service import ai_recommender, workload_predictor, course_intelligence, curriculum_extractor
 from course_utils import (
     canonical_code,
+    parse_json_list,
     serialize_tags,
     serialize_time_slots,
     normalize_days,
@@ -176,6 +177,63 @@ def error_response(e, status=500, message=None, **extra):
         else (message or 'Something went wrong. Please try again.')
     )
     return jsonify(payload), status
+
+
+def courses_missing_times(courses):
+    """Scheduled courses with no meeting times, so no conflict check applied."""
+    return [
+        {
+            'code': c.code,
+            'title': c.name,
+            'credits': c.credits,
+            'reason': 'No meeting times yet, so it was not checked for conflicts',
+        }
+        for c in courses if not parse_json_list(c.time_slots)
+    ]
+
+
+def materialize_curriculum_courses(user):
+    """Give every outstanding requirement a catalog row so it can be scheduled.
+
+    A student's curriculum rarely matches a seeded catalog, and requiring a
+    match meant a real degree plan produced an empty schedule. Requirements
+    without a catalog entry become placeholder courses: real credits and
+    prerequisites, no section times, so they can be planned even though they
+    cannot be checked for time conflicts.
+    """
+    outstanding = CurriculumEntry.query.filter(
+        CurriculumEntry.user_id == user.id,
+        ~CurriculumEntry.status.in_(CurriculumEntry.SATISFIED),
+    ).all()
+    if not outstanding:
+        return []
+
+    existing = {canonical_code(c.code): c for c in Course.query.all()}
+
+    created = []
+    for entry in outstanding:
+        key = canonical_code(entry.course_code)
+        if key in existing:
+            continue
+        course = Course(
+            code=entry.course_code,
+            name=entry.title or entry.course_code,
+            credits=int(entry.credits or 3),
+            description=entry.notes or '',
+            department=entry.category or '',
+            semester='Both',
+            year=datetime.utcnow().year,
+            prerequisites=serialize_prerequisites(entry.prerequisites),
+            time_slots='[]',
+            is_placeholder=True,
+        )
+        db.session.add(course)
+        existing[key] = course
+        created.append(entry.course_code)
+
+    if created:
+        db.session.commit()
+    return created
 
 
 def curriculum_progress(user):
@@ -1530,8 +1588,10 @@ def generate_schedule():
         # for those courses. Without one, fall back to the whole catalog.
         required_codes = curriculum_required_codes(user)
         if required_codes is not None:
+            # Requirements the catalog has never heard of still need planning.
+            materialize_curriculum_courses(user)
             available_courses = [
-                c for c in available_courses
+                c for c in Course.query.all()
                 if canonical_code(c.code) in required_codes
             ]
 
@@ -1544,24 +1604,6 @@ def generate_schedule():
             and not unmet_prerequisites(c.prerequisites, completed_courses)
         ]
 
-        # Requirements with no catalog entry cannot be timetabled, but the
-        # student still needs to know they are outstanding.
-        unscheduled_requirements = []
-        if required_codes is not None:
-            in_catalog = {canonical_code(c.code) for c in available_courses}
-            unscheduled_requirements = [
-                {
-                    'code': r.course_code,
-                    'title': r.title,
-                    'credits': r.credits,
-                    'reason': 'No section information in the course catalog',
-                }
-                for r in CurriculumEntry.query.filter(
-                    CurriculumEntry.user_id == user.id,
-                    ~CurriculumEntry.status.in_(CurriculumEntry.SATISFIED),
-                ).all()
-                if canonical_code(r.course_code) not in in_catalog
-            ]
         blocked_by_prereqs = [
             {
                 'code': c.code,
@@ -1653,8 +1695,9 @@ def generate_schedule():
                 # Tell the student which courses were withheld and why.
                 if blocked_by_prereqs:
                     response_data['blocked_by_prerequisites'] = blocked_by_prereqs
-                if unscheduled_requirements:
-                    response_data['unscheduled_requirements'] = unscheduled_requirements
+                missing_times = courses_missing_times(schedule.courses)
+                if missing_times:
+                    response_data['scheduled_without_times'] = missing_times
                 
                 return jsonify(response_data), 200
         
@@ -1708,8 +1751,9 @@ def generate_schedule():
         # Tell the student which courses were withheld and why.
         if blocked_by_prereqs:
             response_data['blocked_by_prerequisites'] = blocked_by_prereqs
-        if unscheduled_requirements:
-            response_data['unscheduled_requirements'] = unscheduled_requirements
+        missing_times = courses_missing_times(schedule.courses)
+        if missing_times:
+            response_data['scheduled_without_times'] = missing_times
         
         return jsonify(response_data), 200
         
@@ -2126,31 +2170,41 @@ _ADDED_USER_COLUMNS = {
 }
 
 
-def ensure_user_schema():
-    """Add user columns introduced after a database was first created."""
+_ADDED_COURSE_COLUMNS = {
+    'is_placeholder': 'BOOLEAN NOT NULL DEFAULT {false}',
+}
+
+
+def _add_missing_columns(table, columns):
     from sqlalchemy import inspect, text
 
     inspector = inspect(db.engine)
-    if 'user' not in inspector.get_table_names():
+    if table not in inspector.get_table_names():
         return []
 
-    existing = {c['name'] for c in inspector.get_columns('user')}
+    existing = {c['name'] for c in inspector.get_columns(table)}
     false_literal = '0' if db.engine.dialect.name == 'sqlite' else 'FALSE'
 
     added = []
-    for column, ddl in _ADDED_USER_COLUMNS.items():
+    for column, ddl in columns.items():
         if column in existing:
             continue
-        # "user" is a reserved word in Postgres, so it stays quoted.
+        # Quoted because "user" is a reserved word in Postgres.
         db.session.execute(text(
-            f'ALTER TABLE "user" ADD COLUMN {column} {ddl.format(false=false_literal)}'
+            f'ALTER TABLE "{table}" ADD COLUMN {column} {ddl.format(false=false_literal)}'
         ))
         added.append(column)
 
     if added:
         db.session.commit()
-        print(f"Added user column(s): {', '.join(added)}")
+        print(f"Added {table} column(s): {', '.join(added)}")
     return added
+
+
+def ensure_user_schema():
+    """Add columns introduced after a database was first created."""
+    return (_add_missing_columns('user', _ADDED_USER_COLUMNS)
+            + _add_missing_columns('course', _ADDED_COURSE_COLUMNS))
 
 
 def ensure_admins():

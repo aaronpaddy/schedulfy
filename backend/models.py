@@ -106,6 +106,10 @@ class Course(db.Model):
     corequisites = db.Column(db.Text)  # JSON string
     
     # AI-ready fields
+    # Created from a student's curriculum because the catalog had no entry.
+    # Carries requirements and credits but no section times.
+    is_placeholder = db.Column(db.Boolean, default=False, nullable=False)
+
     difficulty = db.Column(db.Float, default=3.0)  # 1.0-5.0 scale
     workload_hours = db.Column(db.Float)  # Average hours per week
     career_tags = db.Column(db.Text)  # JSON array: ["machine-learning", "web-dev"]
@@ -140,6 +144,7 @@ class Course(db.Model):
             'current_enrollment': self.current_enrollment,
             'prerequisites': json.loads(self.prerequisites) if self.prerequisites else [],
             'corequisites': json.loads(self.corequisites) if self.corequisites else [],
+            'is_placeholder': bool(self.is_placeholder),
             'difficulty': self.difficulty,
             'workload_hours': self.workload_hours,
             'career_tags': json.loads(self.career_tags) if self.career_tags else [],
@@ -149,7 +154,13 @@ class Course(db.Model):
             'student_rating': self.student_rating,
             'professor': self.professor,
             'professor_rating': self.professor_rating,
-            'enrollment_percentage': (self.current_enrollment / self.max_capacity * 100) if self.max_capacity > 0 else 0
+            # max_capacity and current_enrollment are both optional: a CSV
+            # import without them, or a course created from a curriculum,
+            # leaves them null. Comparing null to 0 raised a TypeError.
+            'enrollment_percentage': (
+                (self.current_enrollment or 0) / self.max_capacity * 100
+                if self.max_capacity else 0
+            )
         }
 
 
