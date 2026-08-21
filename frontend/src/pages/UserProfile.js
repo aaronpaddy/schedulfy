@@ -16,6 +16,7 @@ import {
   MenuItem,
   Switch,
   FormControlLabel,
+  Autocomplete,
 } from '@mui/material';
 import {
   Person as PersonIcon,
@@ -24,7 +25,7 @@ import {
   Save as SaveIcon,
   Edit as EditIcon,
 } from '@mui/icons-material';
-import { userAPI } from '../services/api';
+import { userAPI, courseAPI } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 
 const UserProfile = () => {
@@ -37,6 +38,26 @@ const UserProfile = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState({});
   const [loadingData, setLoadingData] = useState(true);
+  // Catalog used as the option list for completed courses, so the codes a
+  // student picks always match the ones prerequisites are written against.
+  const [catalog, setCatalog] = useState([]);
+
+  // Load the course catalog for the completed-courses picker.
+  useEffect(() => {
+    let cancelled = false;
+    courseAPI
+      .getCourses()
+      .then((response) => {
+        if (!cancelled) setCatalog(response.data.courses || []);
+      })
+      .catch(() => {
+        // A missing catalog only costs autocomplete suggestions, so fail quiet.
+        if (!cancelled) setCatalog([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Simple test version - just show basic info
   useEffect(() => {
@@ -76,6 +97,7 @@ const UserProfile = () => {
       max_credits_per_semester: defaultUser.preferences.max_credits_per_semester,
       avoid_early_morning: defaultUser.preferences.avoid_early_morning,
       prefer_online_courses: defaultUser.preferences.prefer_online_courses,
+      completed_courses: defaultUser.preferences.completed_courses || [],
     });
     setLoadingData(false);
     
@@ -123,6 +145,7 @@ const UserProfile = () => {
             max_credits_per_semester: backendPrefs.max_credits_per_semester || 18,
             avoid_early_morning: backendPrefs.avoid_early_morning || false,
             prefer_online_courses: backendPrefs.prefer_online_courses || false,
+            completed_courses: backendPrefs.completed_courses || [],
           });
           
           // Save to localStorage
@@ -164,6 +187,7 @@ const UserProfile = () => {
           max_credits_per_semester: formData.max_credits_per_semester,
           avoid_early_morning: formData.avoid_early_morning,
           prefer_online_courses: formData.prefer_online_courses,
+          completed_courses: formData.completed_courses || [],
         },
       };
 
@@ -178,7 +202,7 @@ const UserProfile = () => {
       
       // Save preferences for schedule building
       const scheduleGeneratorPrefs = {
-        completed_courses: [], // Will be populated by schedule builder
+        completed_courses: formData.completed_courses || [],
         preferred_departments: formData.preferred_departments,
         preferred_times: formData.preferred_times,
         max_credits_per_semester: formData.max_credits_per_semester,
@@ -535,6 +559,35 @@ const UserProfile = () => {
                       ))}
                     </Select>
                   </FormControl>
+                </Grid>
+
+                <Grid xs={12}>
+                  <Autocomplete
+                    multiple
+                    options={catalog.map((course) => course.code)}
+                    value={formData.completed_courses || []}
+                    onChange={(event, value) => handleInputChange('completed_courses', value)}
+                    disabled={!isEditing}
+                    freeSolo
+                    renderTags={(value, getTagProps) =>
+                      value.map((option, index) => (
+                        <Chip
+                          label={option}
+                          size="small"
+                          {...getTagProps({ index })}
+                          key={option}
+                        />
+                      ))
+                    }
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        label="Courses Already Completed"
+                        placeholder="Start typing a course code"
+                        helperText="Used to unlock courses whose prerequisites you have met"
+                      />
+                    )}
+                  />
                 </Grid>
 
                 <Grid xs={12} md={6}>

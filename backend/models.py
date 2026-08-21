@@ -32,6 +32,10 @@ class User(db.Model):
     # AI personalization
     workload_capacity = db.Column(db.Integer, default=25)  # Hours per week
     risk_tolerance = db.Column(db.String(20), default='moderate')  # low, moderate, high
+
+    # Catalog administration. The course catalog is shared by every user, so
+    # importing, scraping and clearing it are restricted to admins.
+    is_admin = db.Column(db.Boolean, default=False, nullable=False)
     
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -62,6 +66,7 @@ class User(db.Model):
             'preferences': json.loads(self.preferences) if self.preferences else {},
             'workload_capacity': self.workload_capacity,
             'risk_tolerance': self.risk_tolerance,
+            'is_admin': bool(self.is_admin),
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
 

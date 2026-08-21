@@ -38,9 +38,11 @@ import {
   Add as AddIcon,
 } from '@mui/icons-material';
 import { courseAPI } from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
 
 const CourseDatasetManager = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [selectedFile, setSelectedFile] = useState(null);
   const [importing, setImporting] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -285,6 +287,23 @@ const CourseDatasetManager = () => {
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
+
+  // The catalog is shared, so the backend rejects these actions for
+  // non-admins. Say so plainly instead of letting every button fail with 403.
+  if (user && !user.is_admin) {
+    return (
+      <Container maxWidth="lg" sx={{ py: 4, mt: 8 }}>
+        <Typography variant="h3" component="h1" gutterBottom sx={{ fontWeight: 600, mb: 4 }}>
+          Course Dataset Manager
+        </Typography>
+        <Alert severity="info">
+          The course catalog is shared by everyone using Schedulfy, so importing,
+          scraping and clearing it are limited to administrators. You can still
+          browse the catalog and build schedules.
+        </Alert>
+      </Container>
+    );
+  }
 
   return (
     <Container maxWidth="lg" sx={{ py: 4, mt: 8 }}>

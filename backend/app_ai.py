@@ -137,6 +137,28 @@ def as_float(value, default=None):
         return default
 
 
+def admin_required(f):
+    """Restrict a route to catalog administrators.
+
+    The course catalog is shared by every user, so a single student must not be
+    able to import over it or wipe it for everyone.
+    """
+    from functools import wraps
+
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            return jsonify({'error': 'Authentication required'}), 401
+        user = db.session.get(User, session['user_id'])
+        if user is None or not user.is_admin:
+            return jsonify({
+                'error': 'Administrator access required to modify the course catalog'
+            }), 403
+        return f(*args, **kwargs)
+
+    return decorated_function
+
+
 def get_current_user():
     """Get the current logged-in user"""
     if 'user_id' in session:
@@ -758,7 +780,7 @@ def get_course_detail(course_id):
 
 
 @app.route('/api/courses/import', methods=['POST'])
-@login_required
+@admin_required
 def import_courses():
     """Import courses from CSV or JSON file"""
     try:
@@ -916,17 +938,25 @@ def export_courses():
 
 
 @app.route('/api/courses/clear', methods=['DELETE'])
-@login_required
+@admin_required
 def clear_courses():
     """Delete all courses from the database"""
     try:
-        # Only allow admins or for development
+        # Saved schedules reference courses, and Postgres enforces that foreign
+        # key even though SQLite did not. Detach the schedule entries first,
+        # otherwise the delete aborts.
+        detached = ScheduleCourses.query.delete()
+
+        # Every course is going, so no schedule has any credits left.
+        Schedule.query.update({Schedule.total_credits: 0})
+
         deleted = Course.query.delete()
         db.session.commit()
         
         return jsonify({
             'message': f'Successfully deleted {deleted} courses',
-            'deleted_count': deleted
+            'deleted_count': deleted,
+            'schedule_entries_removed': detached
         }), 200
         
     except Exception as e:
@@ -935,7 +965,7 @@ def clear_courses():
 
 
 @app.route('/api/courses/scrape', methods=['POST'])
-@login_required
+@admin_required
 def scrape_courses():
     """Scrape courses from a university website URL using BeautifulSoup4"""
     try:
@@ -1364,7 +1394,12 @@ def manage_user(user_id):
         if 'learning_preferences' in data:
             current_user.learning_preferences = json.dumps(data['learning_preferences']) if isinstance(data['learning_preferences'], dict) else data['learning_preferences']
         if 'preferences' in data:
-            current_user.preferences = json.dumps(data['preferences']) if isinstance(data['preferences'], dict) else data['preferences']
+            if isinstance(data['preferences'], dict):
+                merged = json.loads(current_user.preferences) if current_user.preferences else {}
+                merged.update(data['preferences'])
+                current_user.preferences = json.dumps(merged)
+            else:
+                current_user.preferences = data['preferences']
         if 'workload_capacity' in data:
             current_user.workload_capacity = as_int(data['workload_capacity'], 25)
         if 'risk_tolerance' in data:
@@ -1406,7 +1441,20 @@ def manage_user_preferences(user_id):
         data = request.get_json()
         
         if 'preferences' in data:
-            current_user.preferences = json.dumps(data['preferences']) if isinstance(data['preferences'], dict) else data['preferences']
+            incoming = data['preferences']
+            if isinstance(incoming, str):
+                incoming = json.loads(incoming)
+
+            if isinstance(incoming, dict):
+                # Merge rather than replace. The profile form only knows about
+                # a handful of keys, and replacing wiped everything else it had
+                # never heard of - completed_courses among them.
+                existing = json.loads(current_user.preferences) if current_user.preferences else {}
+                existing.update(incoming)
+                current_user.preferences = json.dumps(existing)
+            else:
+                current_user.preferences = json.dumps(incoming)
+
             db.session.commit()
             
             return jsonify({
@@ -1685,6 +1733,64 @@ def get_weekly_schedule(schedule_id):
 
 # ==================== Initialize Database ====================
 
+def ensure_user_schema():
+    """Add columns introduced after a database was first created.
+
+    db.create_all() creates missing tables but never alters existing ones, and
+    this project has no migration tool, so add is_admin by hand when absent.
+    """
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(db.engine)
+    if 'user' not in inspector.get_table_names():
+        return False
+
+    columns = {c['name'] for c in inspector.get_columns('user')}
+    if 'is_admin' in columns:
+        return False
+
+    default = '0' if db.engine.dialect.name == 'sqlite' else 'FALSE'
+    # "user" is a reserved word in Postgres, so it stays quoted.
+    db.session.execute(
+        text(f'ALTER TABLE "user" ADD COLUMN is_admin BOOLEAN NOT NULL DEFAULT {default}')
+    )
+    db.session.commit()
+    print('Added is_admin column to user table')
+    return True
+
+
+def ensure_admins():
+    """Make sure at least one account can administer the catalog.
+
+    Accounts listed in ADMIN_EMAILS are promoted. If that leaves nobody, the
+    earliest account is promoted so the catalog tools are never locked away
+    from everyone.
+    """
+    emails = {
+        e.strip().lower()
+        for e in os.getenv('ADMIN_EMAILS', '').split(',')
+        if e.strip()
+    }
+
+    promoted = []
+    if emails:
+        for user in User.query.all():
+            if user.email and user.email.lower() in emails and not user.is_admin:
+                user.is_admin = True
+                promoted.append(user.username)
+
+    if not User.query.filter_by(is_admin=True).first():
+        first = User.query.order_by(User.id).first()
+        if first is not None:
+            first.is_admin = True
+            promoted.append(first.username)
+
+    if promoted:
+        db.session.commit()
+        print(f"Granted catalog admin to: {', '.join(promoted)}")
+    return promoted
+
+
 def repair_prerequisite_encoding():
     """Rewrite prerequisite columns that were stored as nested JSON.
 
@@ -1717,8 +1823,14 @@ def init_db():
             from load_sample_data import load_enhanced_courses
             load_enhanced_courses(db)
         
+        # Bring an existing database up to the current schema
+        ensure_user_schema()
+
         # Normalize any prerequisite values left nested by older imports
         repair_prerequisite_encoding()
+
+        # Ensure the catalog always has an administrator
+        ensure_admins()
 
         # Build course intelligence index
         courses = Course.query.all()
